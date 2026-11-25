@@ -11,9 +11,9 @@ Workflow n8n для чат-виджета на сайте: входящий HTTP
 | `seed_tenant_web.sql` | веб-тенант: `tenants` + `tenant_prompts` + `tenant_kb` (идемпотентно) |
 | `README.md` | этот документ |
 
-> ⚠️ **ID workflow в JSON — `qOt1UbAupbBtmSRl`**, то есть импорт в тот же n8n **заменит**
-> существующий workflow с этим ID (сейчас это основной «AI Sales Agent»). Если нужна копия —
-> поменяйте `id` в JSON перед импортом. В файле `active: false`: после импорта нужно опубликовать.
+> Workflow в JSON — **самостоятельная копия** (`id = 7d0c3f3e130245b1`): при импорте создаётся
+> новый workflow, существующие не перезаписываются. В файле `active: false` — после импорта
+> его нужно опубликовать.
 
 ## HTTP-контракт
 
@@ -162,7 +162,7 @@ curl -sS --max-time 120 -X POST 'https://<n8n-host>/webhook/ai-sales-agent-web' 
 
 ## Развёртывание
 
-1. Импортировать `AI_Sales_Agent_Template_WebChat.json` (учесть ID, см. выше).
+1. Импортировать `AI_Sales_Agent_Template_WebChat.json` — создастся отдельный workflow.
 2. Проверить credentials: Postgres, OpenRouter, Telegram (Google Sheets отключён).
 3. В `Web Chat Webhook` заменить `Allowed Origins (CORS)` = `*` на домены клиента.
 4. Применить `seed_tenant_web.sql` и опубликовать workflow.

@@ -1540,7 +1540,7 @@
         0,
         304
       ],
-      "webhookId": "73204272-f109-4583-8254-289a5f6b3399",
+      "webhookId": "b766de8f-bf9e-4443-ab1a-875b3cd64bf1",
       "notes": "POST {site_key, session_id, message_id, text, page_url}. Перед продакшеном замените Allowed Origins (CORS) на домены клиента."
     },
     {
@@ -2647,12 +2647,12 @@
     "binaryMode": "separate",
     "availableInMCP": true
   },
-  "versionId": "bc0875c1-8725-47f0-b747-f6c7f769aa02",
+  "versionId": "b6e11382-27c3-4c25-a54d-b7a222cd3bc8",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "2679d5680b6be7d2a2d102110308d9be0d01ffce696a3183afe896aaabcb1e04"
   },
   "nodeGroups": [],
-  "id": "qOt1UbAupbBtmSRl",
+  "id": "7d0c3f3e130245b1",
   "tags": []
 }
