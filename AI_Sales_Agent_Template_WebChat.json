@@ -1,29 +1,9 @@
 {
-  "name": "AI Sales Agent Template (Multi-Tenant) — Web Chat",
+  "name": "AI Sales Agent Template (Web Chat)",
   "nodes": [
     {
       "parameters": {
-        "httpMethod": "POST",
-        "path": "ai-sales-agent-web",
-        "responseMode": "responseNode",
-        "options": {
-          "allowedOrigins": "*"
-        }
-      },
-      "id": "31cf05e4-f595-4333-a3bc-88350f5fc372",
-      "name": "Web Chat Webhook",
-      "type": "n8n-nodes-base.webhook",
-      "typeVersion": 2.1,
-      "position": [
-        0,
-        304
-      ],
-      "webhookId": "b441acb1-e4ca-4539-80a0-5ee4f4f02d10",
-      "notes": "Вход веб-чата: POST JSON от виджета. CORS * — ЗАМЕНИТЬ на домены клиента. Ответ синхронный через Respond to Webhook."
-    },
-    {
-      "parameters": {
-        "jsCode": "const b = $json.body ?? {};\nconst text = String(b.text ?? '').trim().slice(0, 2000);\nconst event = {\n  page_id: String(b.site_key ?? ''),\n  channel: 'web',\n  sender_id: String(b.session_id ?? '').slice(0, 64),\n  recipient_id: '',\n  mid: String(b.message_id || (Date.now() + '-' + Math.random().toString(36).slice(2))),\n  text,\n  attachments: [],\n  reply_to: null,\n  page_url: String(b.page_url ?? '').slice(0, 500),\n  timestamp: Date.now(),\n  event_kind: text ? 'message' : 'unknown'\n};\nevent.event_b64 = Buffer.from(JSON.stringify(event), 'utf8').toString('base64');\nreturn [{ json: event }];\n"
+        "jsCode": "const b = $json.body ?? {};\nconst text = String(b.text ?? '').trim().slice(0, 2000);\nconst sid = String(b.session_id ?? '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64);\nconst event = {\n  page_id: String(b.site_key ?? '').slice(0, 128),\n  channel: 'web',\n  sender_id: sid,\n  recipient_id: '',\n  mid: String(b.message_id || (Date.now() + '-' + Math.random().toString(36).slice(2))).slice(0, 128),\n  text,\n  attachments: [],\n  reply_to: null,\n  page_url: String(b.page_url ?? '').slice(0, 500),\n  timestamp: Date.now(),\n  event_kind: (text && sid) ? 'message' : 'unknown'\n};\nevent.event_b64 = Buffer.from(JSON.stringify(event), 'utf8').toString('base64');\nreturn [{ json: event }];\n"
       },
       "id": "03f9b8f1-4f7d-4a02-aa27-1fe92597b6dd",
       "name": "Normalize Events",
@@ -33,7 +13,7 @@
         1104,
         400
       ],
-      "notes": "Один HTTP-запрос = одно событие веб-чата; site_key → page_id, session_id → sender_id."
+      "notes": "Разворачивает все entry[]/messaging[]; классифицирует события; стабильный mid."
     },
     {
       "parameters": {
@@ -116,7 +96,8 @@
           "name": "Postgres account"
         }
       },
-      "notes": "Дедуп по message_id + поиск tenant по site_key (tenants.external_page_id, channel=web)."
+      "notes": "Дедуп по mid + поиск tenant по page_id одним запросом.",
+      "alwaysOutputData": true
     },
     {
       "parameters": {
@@ -155,7 +136,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const j = $input.first().json ?? {};\nconst def = {\n  business: { id: '', name: 'Business', description: '', timezone: 'UTC', languages: ['ru'], communication_tone: '' },\n  agent: { name: 'AI Assistant', model: '', temperature: 0.3, memory_window: 12 },\n  qualification: {\n    required_fields: [\n      { key: 'client_name', label: 'Name', description: 'Customer name' },\n      { key: 'phone', label: 'Phone', description: 'Phone or messenger contact' },\n      { key: 'service_interest', label: 'Service', description: 'Requested service' }\n    ],\n    optional_fields: [\n      { key: 'city', label: 'City', description: 'Customer city' },\n      { key: 'budget', label: 'Budget', description: 'Stated budget' },\n      { key: 'preferred_time', label: 'Preferred time', description: 'Preferred time' }\n    ],\n    lead_criteria: [],\n    handover_criteria: [],\n    handover_on_qualified: true,\n    statuses: ['in_progress', 'interested', 'qualified', 'handover', 'not_lead']\n  },\n  integrations: { instagram_enabled: true, telegram_enabled: true, google_sheets_enabled: false,\n                  sheet_id: '', sheet_tab: '', crm_enabled: false, crm_webhook_url: '' },\n  notifications: { telegram_chat_id: '', notify_on_qualified_lead: true, notify_on_handover: true,\n                   notify_on_error: true, handover_dedupe_hours: 24 },\n  behavior: { graph_api_base: 'https://graph.instagram.com/v25.0', mute_hours: 48, debounce_seconds: 5,\n              handle_reply_to: true, unsupported_reply_text: 'Извините, я пока могу обрабатывать только текстовые сообщения.',\n              ai_error_fallback_text: 'Извините, сейчас не могу ответить. Передам сообщение менеджеру.',\n              voice_error_text: 'Не удалось прослушать голосовое. Напишите, пожалуйста, текстом.',\n              reply_chunk_limit: 950 }\n};\nconst merge = (base, extra) => {\n  const out = Array.isArray(base) ? base.slice() : { ...base };\n  if (!extra || typeof extra !== 'object' || Array.isArray(extra)) return out;\n  for (const [k, v] of Object.entries(extra)) {\n    if (v && typeof v === 'object' && !Array.isArray(v) && base?.[k] && typeof base[k] === 'object' && !Array.isArray(base[k])) out[k] = merge(base[k], v);\n    else if (v !== undefined && v !== null) out[k] = v;\n  }\n  return out;\n};\nconst cfg = merge(def, j.config ?? {});\nconst norm = (arr) => (Array.isArray(arr) ? arr : []).map(f => typeof f === 'string' ? { key: f, label: f, description: '' } : { key: String(f.key ?? ''), label: String(f.label ?? f.key ?? ''), description: String(f.description ?? '') }).filter(f => f.key);\ncfg.qualification.required_fields = norm(cfg.qualification.required_fields);\ncfg.qualification.optional_fields = norm(cfg.qualification.optional_fields);\nconst CORE = ['client_name', 'phone', 'service_interest', 'city', 'budget', 'preferred_time', 'language'];\nconst requiredKeys = Array.from(new Set(['client_name', 'phone', 'service_interest', ...cfg.qualification.required_fields.map(f => f.key)]));\nconst optionalKeys = Array.from(new Set(cfg.qualification.optional_fields.map(f => f.key)));\nconst allFields = [];\nconst seen = new Set();\nfor (const f of [...cfg.qualification.required_fields, ...cfg.qualification.optional_fields]) {\n  if (seen.has(f.key)) continue;\n  seen.add(f.key);\n  allFields.push(f);\n}\nfor (const k of CORE) {\n  if (seen.has(k)) continue;\n  seen.add(k);\n  allFields.push({ key: k, label: k, description: k });\n}\nconst labels = Object.fromEntries(allFields.map(f => [f.key, f.label]));\nconst languages = Array.isArray(cfg.business.languages) && cfg.business.languages.length ? cfg.business.languages : ['ru'];\nconst event = j.event ?? {};\nconst text = String(event.text ?? '');\nconst channel = String(event.channel ?? 'web');\nreturn [{ json: {\n  tenant_id: String(j.tenant_id),\n  channel,\n  page_id: String(event.page_id ?? ''),\n  customer_id: String(event.sender_id ?? ''),\n  mid: String(event.mid ?? ''),\n  event,\n  config: cfg,\n  languages,\n  language_default: languages[0],\n  required_keys: requiredKeys,\n  optional_keys: optionalKeys,\n  lead_labels: labels,\n  memory_key: String(j.tenant_id) + ':' + channel + ':' + String(event.sender_id ?? ''),\n  text,\n  text_b64: Buffer.from(text, 'utf8').toString('base64'),\n  __start_ms: Date.now()\n} }];"
+        "jsCode": "const j = $input.first().json ?? {};\nconst def = {\n  business: { id: '', name: 'Business', description: '', timezone: 'UTC', languages: ['ru'], communication_tone: '' },\n  agent: { name: 'AI Assistant', model: '', temperature: 0.3, memory_window: 12 },\n  qualification: {\n    required_fields: [\n      { key: 'client_name', label: 'Name', description: 'Customer name' },\n      { key: 'phone', label: 'Phone', description: 'Phone or messenger contact' },\n      { key: 'service_interest', label: 'Service', description: 'Requested service' }\n    ],\n    optional_fields: [\n      { key: 'city', label: 'City', description: 'Customer city' },\n      { key: 'budget', label: 'Budget', description: 'Stated budget' },\n      { key: 'preferred_time', label: 'Preferred time', description: 'Preferred time' }\n    ],\n    lead_criteria: [],\n    handover_criteria: [],\n    handover_on_qualified: true,\n    statuses: ['in_progress', 'interested', 'qualified', 'handover', 'not_lead']\n  },\n  integrations: { instagram_enabled: false, telegram_enabled: true, google_sheets_enabled: false,\n                  sheet_id: '', sheet_tab: '', crm_enabled: false, crm_webhook_url: '' },\n  notifications: { telegram_chat_id: '', notify_on_qualified_lead: true, notify_on_handover: true,\n                   notify_on_error: true, handover_dedupe_hours: 24 },\n  behavior: { graph_api_base: 'https://graph.instagram.com/v25.0', mute_hours: 48, debounce_seconds: 0,\n              handle_reply_to: true, unsupported_reply_text: 'Извините, я пока могу обрабатывать только текстовые сообщения.',\n              ai_error_fallback_text: 'Извините, сейчас не могу ответить. Передам сообщение менеджеру.',\n              voice_error_text: 'Не удалось прослушать голосовое. Напишите, пожалуйста, текстом.',\n              reply_chunk_limit: 950 }\n};\nconst merge = (base, extra) => {\n  const out = Array.isArray(base) ? base.slice() : { ...base };\n  if (!extra || typeof extra !== 'object' || Array.isArray(extra)) return out;\n  for (const [k, v] of Object.entries(extra)) {\n    if (v && typeof v === 'object' && !Array.isArray(v) && base?.[k] && typeof base[k] === 'object' && !Array.isArray(base[k])) out[k] = merge(base[k], v);\n    else if (v !== undefined && v !== null) out[k] = v;\n  }\n  return out;\n};\nconst cfg = merge(def, j.config ?? {});\nconst norm = (arr) => (Array.isArray(arr) ? arr : []).map(f => typeof f === 'string' ? { key: f, label: f, description: '' } : { key: String(f.key ?? ''), label: String(f.label ?? f.key ?? ''), description: String(f.description ?? '') }).filter(f => f.key);\ncfg.qualification.required_fields = norm(cfg.qualification.required_fields);\ncfg.qualification.optional_fields = norm(cfg.qualification.optional_fields);\nconst CORE = ['client_name', 'phone', 'service_interest', 'city', 'budget', 'preferred_time', 'language'];\nconst requiredKeys = Array.from(new Set(['client_name', 'phone', 'service_interest', ...cfg.qualification.required_fields.map(f => f.key)]));\nconst optionalKeys = Array.from(new Set(cfg.qualification.optional_fields.map(f => f.key)));\nconst allFields = [];\nconst seen = new Set();\nfor (const f of [...cfg.qualification.required_fields, ...cfg.qualification.optional_fields]) {\n  if (seen.has(f.key)) continue;\n  seen.add(f.key);\n  allFields.push(f);\n}\nfor (const k of CORE) {\n  if (seen.has(k)) continue;\n  seen.add(k);\n  allFields.push({ key: k, label: k, description: k });\n}\nconst labels = Object.fromEntries(allFields.map(f => [f.key, f.label]));\nconst languages = Array.isArray(cfg.business.languages) && cfg.business.languages.length ? cfg.business.languages : ['ru'];\nconst event = j.event ?? {};\nconst text = String(event.text ?? '');\nreturn [{ json: {\n  tenant_id: String(j.tenant_id),\n  channel: String(event.channel ?? 'web'),\n  page_id: String(event.page_id ?? ''),\n  customer_id: String(event.sender_id ?? ''),\n  mid: String(event.mid ?? ''),\n  page_url: String(event.page_url ?? ''),\n  event,\n  config: cfg,\n  languages,\n  language_default: languages[0],\n  required_keys: requiredKeys,\n  optional_keys: optionalKeys,\n  lead_labels: labels,\n  memory_key: String(j.tenant_id) + ':' + String(event.channel ?? 'web') + ':' + String(event.sender_id ?? ''),\n  text,\n  text_b64: Buffer.from(text, 'utf8').toString('base64'),\n  __start_ms: Date.now()\n} }];"
       },
       "id": "6ba04552-b5fd-46bf-a431-77636a3151b6",
       "name": "Load Context",
@@ -165,7 +146,7 @@
         2208,
         384
       ],
-      "notes": "Мерж tenant-конфига с дефолтами, ключ памяти tenant:channel:session."
+      "notes": "Мерж tenant-конфига с дефолтами, ключ памяти tenant:channel:customer."
     },
     {
       "parameters": {
@@ -243,7 +224,7 @@
     {
       "parameters": {
         "chatId": "={{ $json.config.integrations.telegram_enabled === true ? $json.config.notifications.telegram_chat_id : '' }}",
-        "text": "=🔇 Бот молчит в этом диалоге (ручной режим менеджера).\n\n🌐 Страница: {{ $json.event?.page_url || 'веб-чат' }}\n\n💬 Сообщение: {{ $json.text }}",
+        "text": "=🔇 Бот молчит в этом диалоге (ручной режим менеджера).\n\n👤 Веб-чат, сессия: {{ $json.customer_id }}\n🌐 Страница: {{ $json.page_url || '—' }}\n\n💬 Сообщение: {{ $json.text }}",
         "replyMarkup": "inlineKeyboard",
         "inlineKeyboard": {
           "rows": [
@@ -276,7 +257,7 @@
       "retryOnFail": true,
       "maxTries": 3,
       "waitBetweenTries": 2000,
-      "webhookId": "73eb471e-4086-44e1-8388-6385c64d605b",
+      "webhookId": "80ebca4b-d46b-41a4-8c90-24ecefc23dbb",
       "credentials": {
         "telegramApi": {
           "id": "Bl5dMUlxAbvjD5e5",
@@ -313,78 +294,6 @@
               },
               "renameOutput": true,
               "outputKey": "text"
-            },
-            {
-              "conditions": {
-                "options": {
-                  "caseSensitive": true,
-                  "leftValue": "",
-                  "typeValidation": "strict",
-                  "version": 3
-                },
-                "conditions": [
-                  {
-                    "id": "0587b5d8-6ce0-5e62-a07c-1e1a94fe3e98",
-                    "leftValue": "={{ $json.event.event_kind }}",
-                    "rightValue": "audio",
-                    "operator": {
-                      "type": "string",
-                      "operation": "equals"
-                    }
-                  }
-                ],
-                "combinator": "and"
-              },
-              "renameOutput": true,
-              "outputKey": "audio"
-            },
-            {
-              "conditions": {
-                "options": {
-                  "caseSensitive": true,
-                  "leftValue": "",
-                  "typeValidation": "strict",
-                  "version": 3
-                },
-                "conditions": [
-                  {
-                    "id": "d5458c2a-4f40-59f6-ae46-5d88788e68be",
-                    "leftValue": "={{ $json.event.event_kind }}",
-                    "rightValue": "media",
-                    "operator": {
-                      "type": "string",
-                      "operation": "equals"
-                    }
-                  }
-                ],
-                "combinator": "and"
-              },
-              "renameOutput": true,
-              "outputKey": "media"
-            },
-            {
-              "conditions": {
-                "options": {
-                  "caseSensitive": true,
-                  "leftValue": "",
-                  "typeValidation": "strict",
-                  "version": 3
-                },
-                "conditions": [
-                  {
-                    "id": "c132d3f1-26eb-500d-9ead-d812f3f57541",
-                    "leftValue": "={{ $json.event.event_kind }}",
-                    "rightValue": "echo",
-                    "operator": {
-                      "type": "string",
-                      "operation": "equals"
-                    }
-                  }
-                ],
-                "combinator": "and"
-              },
-              "renameOutput": true,
-              "outputKey": "echo"
             }
           ]
         },
@@ -424,7 +333,22 @@
           "name": "Postgres account"
         }
       },
-      "notes": "Копим текстовые сообщения для debounce."
+      "notes": "Копим текстовые сообщения для debounce.",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $('Load Context').first().json;\nconst ins = $input.first()?.json ?? {};\nreturn [{ json: { ...ctx, pending_id: ins.id } }];"
+      },
+      "id": "f29440ca-ae17-4d22-8c9b-668591aff74f",
+      "name": "Restore Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3536,
+        432
+      ],
+      "notes": "Возвращает контекст после Insert Pending: Debounce/Wait/Is Last получают tenant_id, channel, customer_id, mid."
     },
     {
       "parameters": {
@@ -456,7 +380,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        3520,
+        3760,
         432
       ],
       "notes": "behavior.debounce_seconds > 0 включает склейку."
@@ -470,10 +394,10 @@
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1.1,
       "position": [
-        3744,
+        3984,
         320
       ],
-      "webhookId": "eb4309dd-7e1f-4731-8b5b-a5349ed60a8e",
+      "webhookId": "313b95a9-58bb-4821-88b7-0fc7bcb189e8",
       "notes": "Ждём, не допишет ли клиент."
     },
     {
@@ -481,7 +405,7 @@
         "operation": "executeQuery",
         "query": "\nSELECT EXISTS (\n  SELECT 1 FROM pending_messages p\n  WHERE p.tenant_id = $1 AND p.channel = $2 AND p.customer_id = $3 AND p.processed_at IS NULL\n    AND p.id > (SELECT id FROM pending_messages\n                WHERE tenant_id = $1 AND channel = $2 AND customer_id = $3 AND mid = $4\n                ORDER BY id DESC LIMIT 1)\n) AS has_newer;\n",
         "options": {
-          "queryReplacement": "={{ $json.tenant_id }},{{ $json.channel }},{{ $json.customer_id }},{{ $json.mid }}"
+          "queryReplacement": "={{ $('Load Context').first().json.tenant_id }},{{ $('Load Context').first().json.channel }},{{ $('Load Context').first().json.customer_id }},{{ $('Load Context').first().json.mid }}"
         }
       },
       "id": "9c71bbae-cf91-42f7-889c-2775d55736c0",
@@ -489,7 +413,7 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        3968,
+        4208,
         320
       ],
       "credentials": {
@@ -530,7 +454,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        4192,
+        4432,
         320
       ],
       "notes": "Не последнее сообщение уступает следующему."
@@ -542,7 +466,7 @@
       "type": "n8n-nodes-base.noOp",
       "typeVersion": 1,
       "position": [
-        4400,
+        4640,
         272
       ],
       "notes": "Уступаем более новому сообщению."
@@ -552,7 +476,7 @@
         "operation": "executeQuery",
         "query": "\nWITH claimed AS (\n  UPDATE pending_messages SET processed_at = now()\n  WHERE tenant_id = $1 AND channel = $2 AND customer_id = $3 AND processed_at IS NULL\n  RETURNING id, text_b64\n)\nSELECT string_agg(convert_from(decode(text_b64,'base64'),'UTF8'), E'\\n' ORDER BY id) AS text,\n       count(*)::int AS messages_count\nFROM claimed;\n",
         "options": {
-          "queryReplacement": "={{ $json.tenant_id }},{{ $json.channel }},{{ $json.customer_id }}"
+          "queryReplacement": "={{ $('Load Context').first().json.tenant_id }},{{ $('Load Context').first().json.channel }},{{ $('Load Context').first().json.customer_id }}"
         }
       },
       "id": "af3e094d-e772-4832-8aa5-e07f2b896f8e",
@@ -560,7 +484,7 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        4400,
+        4640,
         448
       ],
       "credentials": {
@@ -580,7 +504,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        4624,
+        4864,
         448
       ],
       "notes": "Вход агента: склеенный текст + маркер ответа на сторис."
@@ -588,7 +512,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "SELECT username, display_name, phone, service_interest, city, lead_status, lead_data, summary, muted_until, lead_notified_at, handover_notified_at, handover_reason FROM leads WHERE tenant_id = $1 AND channel = $2 AND customer_id = $3 LIMIT 1;",
+        "query": "(SELECT username, display_name, phone, service_interest, city, lead_status,\n       COALESCE(lead_data, '{}'::jsonb) AS lead_data, summary, muted_until,\n       lead_notified_at, handover_notified_at, handover_reason\nFROM leads\nWHERE tenant_id = $1 AND channel = $2 AND customer_id = $3\nLIMIT 1)\nUNION ALL\n(SELECT NULL, NULL, NULL, NULL, NULL, NULL,\n       '{}'::jsonb, NULL, NULL, NULL, NULL, NULL\nWHERE NOT EXISTS (\n  SELECT 1 FROM leads\n  WHERE tenant_id = $1 AND channel = $2 AND customer_id = $3\n));",
         "options": {
           "queryReplacement": "={{ $('Load Context').first().json.tenant_id }},{{ $('Load Context').first().json.channel }},{{ $('Load Context').first().json.customer_id }}"
         }
@@ -598,7 +522,7 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        4848,
+        5088,
         400
       ],
       "credentials": {
@@ -611,49 +535,14 @@
     },
     {
       "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": "",
-            "typeValidation": "strict",
-            "version": 3
-          },
-          "conditions": [
-            {
-              "id": "19a423a1-a706-5381-8321-35a018716cb7",
-              "leftValue": "={{ !!($json.username || $json.display_name) }}",
-              "rightValue": "",
-              "operator": {
-                "type": "boolean",
-                "operation": "true",
-                "singleValue": true
-              }
-            }
-          ],
-          "combinator": "and"
-        },
-        "options": {}
-      },
-      "id": "106d0b32-cc9a-4a22-87f3-64d65802afcb",
-      "name": "Has Profile?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.3,
-      "position": [
-        5072,
-        400
-      ],
-      "notes": "Для веб-чата профиль Graph не нужен: обе ветки идут в Merge Profile."
-    },
-    {
-      "parameters": {
-        "jsCode": "const ctx = $('Load Context').first().json;\nlet text = ctx.text;\nlet messages = 1;\ntry { const p = $('Prepare Input').first().json; text = p.text ?? text; messages = p.messages_count ?? messages; } catch (e) {}\ntry { const v = $('Voice Input').first().json; text = v.text ?? text; } catch (e) {}\nconst fetched = $input.first().json ?? {};\nconst username = fetched.username ?? $json.username ?? null;\nconst display_name = fetched.name ?? $json.display_name ?? null;\nlet lead = {};\ntry { lead = $('Load Lead').first().json ?? {}; } catch (e) { lead = {}; }\nreturn [{ json: { ...ctx, text, messages_count: messages, username, display_name, lead } }];"
+        "jsCode": "const ctx = $('Load Context').first().json;\nlet text = ctx.text;\nlet messages = 1;\ntry { const p = $('Prepare Input').first().json; text = p.text ?? text; messages = p.messages_count ?? messages; } catch (e) {}\nconst fetched = $input.first().json ?? {};\nconst username = fetched.username ?? $json.username ?? null;\nconst display_name = fetched.name ?? $json.display_name ?? null;\nlet lead = {};\ntry { lead = $('Load Lead').first().json ?? {}; } catch (e) { lead = {}; }\nreturn [{ json: { ...ctx, text, messages_count: messages, username, display_name, lead } }];"
       },
       "id": "af990f7b-fd7d-4d7d-92f8-5f73ea4be99b",
       "name": "Merge Profile",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        5504,
+        5744,
         400
       ],
       "notes": "Склеивает контекст, профиль и прошлого лида."
@@ -671,7 +560,7 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        5728,
+        5968,
         400
       ],
       "credentials": {
@@ -680,7 +569,8 @@
           "name": "Postgres account"
         }
       },
-      "notes": "Активная версия промпта."
+      "notes": "Активная версия промпта.",
+      "alwaysOutputData": true
     },
     {
       "parameters": {
@@ -695,7 +585,7 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        5952,
+        6192,
         400
       ],
       "credentials": {
@@ -715,7 +605,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        6160,
+        6400,
         400
       ],
       "notes": "Подставляет KB и built-ins, собирает схему из полей, проверяет пропуски."
@@ -750,7 +640,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        6384,
+        6624,
         400
       ],
       "notes": "Незаполненная KB не даёт стартовать."
@@ -769,7 +659,7 @@
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 3.1,
       "position": [
-        6832,
+        7072,
         400
       ],
       "onError": "continueErrorOutput",
@@ -787,7 +677,7 @@
       "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
       "typeVersion": 1,
       "position": [
-        6752,
+        6992,
         624
       ],
       "credentials": {
@@ -809,7 +699,7 @@
       "type": "@n8n/n8n-nodes-langchain.memoryPostgresChat",
       "typeVersion": 1.4,
       "position": [
-        6880,
+        7120,
         624
       ],
       "credentials": {
@@ -831,7 +721,7 @@
       "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
       "typeVersion": 1.3,
       "position": [
-        7024,
+        7264,
         624
       ],
       "notes": "Схема собрана из конфига квалификации."
@@ -851,7 +741,7 @@
       "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
       "typeVersion": 1.3,
       "position": [
-        6960,
+        7200,
         832
       ],
       "credentials": {
@@ -870,7 +760,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        7040,
+        7280,
         400
       ],
       "notes": "Валидирует JSON агента, чинит статусы, пересчитывает missing_fields."
@@ -905,7 +795,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        7264,
+        7504,
         400
       ],
       "notes": "Невалидный вывод не сохраняется и не отправляется."
@@ -919,24 +809,24 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        7488,
+        7728,
         400
       ],
       "notes": "Режет ответ по конфигурируемому лимиту, один item с chunks[]."
     },
     {
       "parameters": {
-        "jsCode": "const safeAll = (name) => { try { return $(name).all().map(i => i.json); } catch (e) { return []; } };\nconst sent = safeAll('Log Sent');\nconst attempts = sent;\nconst base = $('Prepare Reply').first().json;\nconst usage = base.ai_usage ?? null;\nconst delivered = sent.length > 0;\nconst extracted = { ...(base.lead_data ?? {}), missing_fields: base.missing_fields ?? [] };\nreturn [{ json: {\n  ...base,\n  extracted_b64: Buffer.from(JSON.stringify(extracted), 'utf8').toString('base64'),\n  ig_send_status: delivered ? 200 : 0,\n  chunks_sent: sent.length,\n  send_attempts: attempts.length,\n  tokens_in: usage?.prompt_tokens ?? usage?.input_tokens ?? null,\n  tokens_out: usage?.completion_tokens ?? usage?.output_tokens ?? null,\n  total_latency_ms: Math.max(0, Date.now() - Number(base.__start_ms ?? Date.now())),\n  ai_latency_ms: Math.max(0, Number(base.ai_end_ms ?? 0) - Number(base.__start_ms ?? 0))\n} }];"
+        "jsCode": "const base = $('Prepare Reply').first().json;\nconst usage = base.ai_usage ?? null;\nconst extracted = { ...(base.lead_data ?? {}), missing_fields: base.missing_fields ?? [] };\nreturn [{ json: {\n  ...base,\n  extracted_b64: Buffer.from(JSON.stringify(extracted), 'utf8').toString('base64'),\n  ig_send_status: 200,\n  chunks_sent: 1,\n  send_attempts: 1,\n  tokens_in: usage?.prompt_tokens ?? usage?.input_tokens ?? null,\n  tokens_out: usage?.completion_tokens ?? usage?.output_tokens ?? null,\n  total_latency_ms: Math.max(0, Date.now() - Number(base.__start_ms ?? Date.now())),\n  ai_latency_ms: Math.max(0, Number(base.ai_end_ms ?? 0) - Number(base.__start_ms ?? 0))\n} }];"
       },
       "id": "7448a74c-5a09-4a26-995f-cdcac0623bdc",
       "name": "Build Summary",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        8592,
+        8832,
         400
       ],
-      "notes": "Сводка: фактическая доставка (запись sent_messages), а не «200 по умолчанию»."
+      "notes": "Сводка: фактическая доставка, а не «200 по умолчанию»."
     },
     {
       "parameters": {
@@ -947,7 +837,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        8800,
+        9040,
         400
       ],
       "notes": "Base64-параметры: запятые в тексте не ломают SQL."
@@ -965,7 +855,7 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        9024,
+        9264,
         400
       ],
       "credentials": {
@@ -985,7 +875,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        9248,
+        9488,
         400
       ],
       "notes": "Склеивает ответ БД с контекстом."
@@ -1020,21 +910,21 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        9472,
+        9712,
         400
       ],
       "notes": "Один алерт на handover (дедуп в SQL)."
     },
     {
       "parameters": {
-        "jsCode": "const s = $input.first().json;\nconst ld = s.lead_data ?? {};\nconst esc = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst label = (k) => esc(s.lead_labels?.[k] ?? k);\nconst rows = Object.keys(ld).filter(k => k !== 'language' && String(ld[k] ?? '').trim()).map(k => '• <b>' + label(k) + ':</b> ' + esc(ld[k]));\nconst profile = esc(s.event?.page_url || s.page_url || '—');\nconst text = [\n  '🔔 <b>' + esc(s.config.business.name) + '</b>',\n  '',\n  '👤 <b>' + esc(s.display_name || ld.client_name || 'Customer') + '</b>',\n  '🔗 ' + profile,\n  '📞 ' + esc(ld.phone || '—'),\n  '📦 <b>Status:</b> ' + esc(s.lead_status),\n  '🎯 <b>Handover reason:</b> ' + esc(s.handover_reason || '—'),\n  '',\n  rows.join('\\n'),\n  '',\n  '📝 <b>Summary:</b> ' + esc(s.summary || '—'),\n  '💬 <b>Last message:</b> ' + esc(s.text || '—')\n].join('\\n');\nreturn [{ json: { ...s, handover_text: text } }];"
+        "jsCode": "const s = $input.first().json;\nconst ld = s.lead_data ?? {};\nconst esc = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst label = (k) => esc(s.lead_labels?.[k] ?? k);\nconst rows = Object.keys(ld).filter(k => k !== 'language' && String(ld[k] ?? '').trim()).map(k => '• <b>' + label(k) + ':</b> ' + esc(ld[k]));\nconst profile = s.page_url ? esc(s.page_url) : 'веб-чат';\nconst text = [\n  '🔔 <b>' + esc(s.config.business.name) + '</b>',\n  '',\n  '👤 <b>' + esc(s.display_name || ld.client_name || 'Customer') + '</b>',\n  '🔗 ' + profile,\n  '🆔 Сессия: ' + esc(s.customer_id),\n  '📞 ' + esc(ld.phone || '—'),\n  '📦 <b>Status:</b> ' + esc(s.lead_status),\n  '🎯 <b>Handover reason:</b> ' + esc(s.handover_reason || '—'),\n  '',\n  rows.join('\\n'),\n  '',\n  '📝 <b>Summary:</b> ' + esc(s.summary || '—'),\n  '💬 <b>Last message:</b> ' + esc(s.text || '—')\n].join('\\n');\nreturn [{ json: { ...s, handover_text: text } }];"
       },
       "id": "3e4e3de8-b7c9-42e2-9104-552f6f8a050a",
       "name": "Build Handover",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        9680,
+        9920,
         320
       ],
       "notes": "Карточка менеджеру: бизнес, клиент, данные, причина, summary."
@@ -1052,13 +942,13 @@
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
-        9904,
+        10144,
         320
       ],
       "retryOnFail": true,
       "maxTries": 3,
       "waitBetweenTries": 2000,
-      "webhookId": "e22bf524-9a5a-48a0-853d-67a2614d7559",
+      "webhookId": "c81a8276-9fe4-455d-bfa9-5bbb7b19a21e",
       "credentials": {
         "telegramApi": {
           "id": "Bl5dMUlxAbvjD5e5",
@@ -1081,7 +971,7 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        10128,
+        10368,
         320
       ],
       "credentials": {
@@ -1122,7 +1012,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        10352,
+        10592,
         400
       ],
       "notes": "Google Sheets опционален и включается конфигом."
@@ -1268,7 +1158,7 @@
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.7,
       "position": [
-        10560,
+        10800,
         320
       ],
       "disabled": true,
@@ -1305,7 +1195,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        10784,
+        11024,
         400
       ],
       "notes": "Универсальный CRM-webhook, если включён."
@@ -1326,7 +1216,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        11008,
+        11248,
         320
       ],
       "onError": "continueRegularOutput",
@@ -1345,7 +1235,7 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        11232,
+        11472,
         400
       ],
       "credentials": {
@@ -1365,7 +1255,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        10128,
+        10368,
         480
       ],
       "notes": "Уведомление не ушло — лид остаётся ненайденным, ошибка логируется."
@@ -1379,7 +1269,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        6608,
+        6848,
         928
       ],
       "notes": "Единый формат ошибки, маскирует токены."
@@ -1393,7 +1283,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        6832,
+        7072,
         928
       ],
       "notes": "Base64 для параметризованного SQL."
@@ -1411,7 +1301,7 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        7040,
+        7280,
         928
       ],
       "credentials": {
@@ -1435,13 +1325,13 @@
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
-        7264,
+        7504,
         928
       ],
       "retryOnFail": true,
       "maxTries": 3,
       "waitBetweenTries": 2000,
-      "webhookId": "aca83415-4741-4a03-a121-fde948f01289",
+      "webhookId": "72905417-e271-41f2-be0b-3d6eeaf2ff1e",
       "credentials": {
         "telegramApi": {
           "id": "Bl5dMUlxAbvjD5e5",
@@ -1481,21 +1371,21 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        9680,
+        9920,
         512
       ],
       "notes": "Новый квалифицированный лид без handover."
     },
     {
       "parameters": {
-        "jsCode": "const s = $input.first().json;\nconst ld = s.lead_data ?? {};\nconst esc = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst label = (k) => esc(s.lead_labels?.[k] ?? k);\nconst rows = Object.keys(ld).filter(k => k !== 'language' && String(ld[k] ?? '').trim()).map(k => '• <b>' + label(k) + ':</b> ' + esc(ld[k]));\nconst profile = esc(s.event?.page_url || s.page_url || '—');\nconst text = [\n  '🆕 <b>' + esc(s.config.business.name) + '</b>',\n  '',\n  '👤 <b>' + esc(s.display_name || ld.client_name || 'Customer') + '</b>',\n  '🔗 ' + profile,\n  '📞 ' + esc(ld.phone || '—'),\n  '📦 <b>Status:</b> ' + esc(s.lead_status),\n  '',\n  rows.join('\\n'),\n  '',\n  '📝 <b>Summary:</b> ' + esc(s.summary || '—'),\n  '💬 <b>Last message:</b> ' + esc(s.text || '—')\n].join('\\n');\nreturn [{ json: { ...s, lead_text: text } }];"
+        "jsCode": "const s = $input.first().json;\nconst ld = s.lead_data ?? {};\nconst esc = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst label = (k) => esc(s.lead_labels?.[k] ?? k);\nconst rows = Object.keys(ld).filter(k => k !== 'language' && String(ld[k] ?? '').trim()).map(k => '• <b>' + label(k) + ':</b> ' + esc(ld[k]));\nconst profile = s.page_url ? esc(s.page_url) : 'веб-чат';\nconst text = [\n  '🆕 <b>' + esc(s.config.business.name) + '</b>',\n  '',\n  '👤 <b>' + esc(s.display_name || ld.client_name || 'Customer') + '</b>',\n  '🔗 ' + profile,\n  '🆔 Сессия: ' + esc(s.customer_id),\n  '📞 ' + esc(ld.phone || '—'),\n  '📦 <b>Status:</b> ' + esc(s.lead_status),\n  '',\n  rows.join('\\n'),\n  '',\n  '📝 <b>Summary:</b> ' + esc(s.summary || '—'),\n  '💬 <b>Last message:</b> ' + esc(s.text || '—')\n].join('\\n');\nreturn [{ json: { ...s, lead_text: text } }];"
       },
       "id": "c90600e4-58a2-4244-88fa-ee8d3ceda27f",
       "name": "Build Lead Card",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        9904,
+        10144,
         512
       ],
       "notes": "Карточка нового лида."
@@ -1513,13 +1403,13 @@
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
-        10128,
+        10368,
         512
       ],
       "retryOnFail": true,
       "maxTries": 3,
       "waitBetweenTries": 2000,
-      "webhookId": "7f7cfc4f-3068-43ff-8a37-ecf9d61aaf93",
+      "webhookId": "b8f66719-b565-4d15-96d9-8dc41b6d4032",
       "credentials": {
         "telegramApi": {
           "id": "Bl5dMUlxAbvjD5e5",
@@ -1542,7 +1432,7 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        10352,
+        10592,
         512
       ],
       "credentials": {
@@ -1562,34 +1452,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        10352,
+        10592,
         672
       ],
       "notes": "Ошибка Telegram: лид не помечается."
-    },
-    {
-      "parameters": {
-        "operation": "executeQuery",
-        "query": "INSERT INTO sent_messages (tenant_id, channel, customer_id, external_message_id) VALUES ($1, $2, $3, NULLIF($4,'')) ON CONFLICT (external_message_id) DO UPDATE SET external_message_id = EXCLUDED.external_message_id RETURNING 1;",
-        "options": {
-          "queryReplacement": "={{ $('Prepare Reply').first().json.tenant_id }},{{ $('Prepare Reply').first().json.channel }},{{ $('Prepare Reply').first().json.customer_id }},{{ $json.message_id }}"
-        }
-      },
-      "id": "b307a06a-0795-4481-b8ae-4a1f54f29550",
-      "name": "Log Sent",
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2.6,
-      "position": [
-        8368,
-        480
-      ],
-      "credentials": {
-        "postgres": {
-          "id": "zCkt16eDshACnYEn",
-          "name": "Postgres account"
-        }
-      },
-      "notes": "Пишем исходящее сообщение (mid:out) в sent_messages — совместимость и метрики."
     },
     {
       "parameters": {
@@ -1600,7 +1466,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        7488,
+        7728,
         544
       ],
       "notes": "Готовит fallback и ошибку."
@@ -1614,7 +1480,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        6832,
+        7072,
         608
       ],
       "notes": "Fallback клиенту при сбое провайдера."
@@ -1628,350 +1494,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        6608,
+        6848,
         544
       ],
       "notes": "Текст ошибки для админа."
-    },
-    {
-      "parameters": {
-        "url": "={{ $json.event.attachments?.[0]?.payload?.url }}",
-        "options": {
-          "response": {
-            "response": {
-              "responseFormat": "file"
-            }
-          },
-          "timeout": 30000
-        }
-      },
-      "id": "34cc236f-f4ef-48cd-abc0-b535663d4be3",
-      "name": "Download Audio",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.4,
-      "position": [
-        3312,
-        608
-      ],
-      "retryOnFail": true,
-      "maxTries": 2,
-      "onError": "continueErrorOutput",
-      "notes": "Скачивает голосовое вложение."
-    },
-    {
-      "parameters": {
-        "resource": "audio",
-        "operation": "transcribe",
-        "options": {}
-      },
-      "id": "09491ede-e6fb-4afe-95b4-39fa3d845251",
-      "name": "Transcribe Audio",
-      "type": "@n8n/n8n-nodes-langchain.openAi",
-      "typeVersion": 2.3,
-      "position": [
-        3520,
-        608
-      ],
-      "credentials": {
-        "openAiApi": {
-          "id": "YxefrKW36Qphwk0l",
-          "name": "OpenAI account"
-        }
-      },
-      "onError": "continueErrorOutput",
-      "notes": "Whisper: голос в текст."
-    },
-    {
-      "parameters": {
-        "jsCode": "const ctx = $('Load Context').first().json;\nconst text = String($json.text ?? '').trim();\nconst marker = (ctx.config.behavior.handle_reply_to && ctx.event?.reply_to) ? '[Клиент ответил на сторис/сообщение] ' : '';\nreturn [{ json: { ...ctx, text: (marker + text).trim(), messages_count: 1 } }];"
-      },
-      "id": "11f7ccf0-1f5d-437d-a930-14db16e6b2e7",
-      "name": "Voice Input",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        3744,
-        608
-      ],
-      "notes": "Транскрипт становится входом агента."
-    },
-    {
-      "parameters": {
-        "jsCode": "const ctx = $('Load Context').first().json;\nreturn [{ json: { ...ctx, fallback_text: ctx.config.behavior.voice_error_text,\n  node_name: $json.node?.name ?? 'Transcribe Audio',\n  error_message: String($json.error?.message ?? $json.error ?? 'audio failed').slice(0, 500),\n  error_stage: 'voice' } }];"
-      },
-      "id": "91f2dd8e-2b73-431d-98c8-10b203a2ac00",
-      "name": "Voice Fallback",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        3744,
-        768
-      ],
-      "notes": "Клиент получает понятный текст вместо тишины."
-    },
-    {
-      "parameters": {
-        "operation": "executeQuery",
-        "query": "SELECT EXISTS (SELECT 1 FROM unsupported_replies WHERE tenant_id = $1 AND channel = $2 AND customer_id = $3 AND sent_at > now() - make_interval(hours => 12)) AS recently_sent;",
-        "options": {
-          "queryReplacement": "={{ $json.tenant_id }},{{ $json.channel }},{{ $json.customer_id }}"
-        }
-      },
-      "id": "93e8280c-ee91-4290-899e-64a13de7bb9e",
-      "name": "Media Window",
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2.6,
-      "position": [
-        3312,
-        720
-      ],
-      "credentials": {
-        "postgres": {
-          "id": "zCkt16eDshACnYEn",
-          "name": "Postgres account"
-        }
-      },
-      "notes": "Один ответ на вложения не чаще раза в 12 часов."
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": "",
-            "typeValidation": "strict",
-            "version": 3
-          },
-          "conditions": [
-            {
-              "id": "b550af5f-c4f1-510f-88f2-8371c15d120a",
-              "leftValue": "={{ !$json.recently_sent }}",
-              "rightValue": "",
-              "operator": {
-                "type": "boolean",
-                "operation": "true",
-                "singleValue": true
-              }
-            }
-          ],
-          "combinator": "and"
-        },
-        "options": {}
-      },
-      "id": "09d0c5a8-8dae-47f7-afeb-f8202ab11fdd",
-      "name": "Media Allowed?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.3,
-      "position": [
-        3520,
-        720
-      ],
-      "notes": "Окно не истекло — молчим."
-    },
-    {
-      "parameters": {
-        "operation": "executeQuery",
-        "query": "INSERT INTO unsupported_replies (tenant_id, channel, customer_id) VALUES ($1, $2, $3) RETURNING 1;",
-        "options": {
-          "queryReplacement": "={{ $('Load Context').first().json.tenant_id }},{{ $('Load Context').first().json.channel }},{{ $('Load Context').first().json.customer_id }}"
-        }
-      },
-      "id": "f82fb96d-5800-4332-99b1-4ea863ab0ccf",
-      "name": "Record Media",
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2.6,
-      "position": [
-        3968,
-        688
-      ],
-      "credentials": {
-        "postgres": {
-          "id": "zCkt16eDshACnYEn",
-          "name": "Postgres account"
-        }
-      },
-      "notes": "Фиксируем окно ответа."
-    },
-    {
-      "parameters": {
-        "operation": "executeQuery",
-        "query": "SELECT EXISTS (SELECT 1 FROM sent_messages WHERE external_message_id = NULLIF($1,'')) AS is_bot_echo;",
-        "options": {
-          "queryReplacement": "={{ $json.mid }}"
-        }
-      },
-      "id": "1c640c13-1dc7-4c71-b541-e7ba15cbe002",
-      "name": "Check Bot Sent",
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2.6,
-      "position": [
-        3312,
-        848
-      ],
-      "credentials": {
-        "postgres": {
-          "id": "zCkt16eDshACnYEn",
-          "name": "Postgres account"
-        }
-      },
-      "notes": "Эхо с известным mid — наше сообщение."
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": "",
-            "typeValidation": "strict",
-            "version": 3
-          },
-          "conditions": [
-            {
-              "id": "939ba738-ddd5-5674-b924-2d507918aa64",
-              "leftValue": "={{ $json.is_bot_echo }}",
-              "rightValue": "",
-              "operator": {
-                "type": "boolean",
-                "operation": "true",
-                "singleValue": true
-              }
-            }
-          ],
-          "combinator": "and"
-        },
-        "options": {}
-      },
-      "id": "85bf1634-dc8a-4bd0-80bf-7b96b4c046a9",
-      "name": "Is Bot Echo?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.3,
-      "position": [
-        3520,
-        848
-      ],
-      "notes": "Своё эхо не мьютит клиента."
-    },
-    {
-      "parameters": {
-        "operation": "executeQuery",
-        "query": "WITH d AS (DELETE FROM sent_messages WHERE external_message_id = NULLIF($1,'') RETURNING 1) SELECT 1 AS ok;",
-        "options": {
-          "queryReplacement": "={{ $('Load Context').first().json.mid }}"
-        }
-      },
-      "id": "67b03bd6-9081-401c-89b7-48264df1ae07",
-      "name": "Cleanup Sent",
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2.6,
-      "position": [
-        3744,
-        768
-      ],
-      "credentials": {
-        "postgres": {
-          "id": "zCkt16eDshACnYEn",
-          "name": "Postgres account"
-        }
-      },
-      "notes": "Запись больше не нужна."
-    },
-    {
-      "parameters": {
-        "amount": 3
-      },
-      "id": "28b432db-b684-4ad4-a005-c67e05b14a1e",
-      "name": "Wait Echo",
-      "type": "n8n-nodes-base.wait",
-      "typeVersion": 1.1,
-      "position": [
-        3744,
-        928
-      ],
-      "webhookId": "b4c3db93-58da-44ba-9615-10489dcf9090",
-      "notes": "Даём записи догнать эхо."
-    },
-    {
-      "parameters": {
-        "operation": "executeQuery",
-        "query": "SELECT EXISTS (SELECT 1 FROM sent_messages WHERE external_message_id = NULLIF($1,'')) AS is_bot_echo;",
-        "options": {
-          "queryReplacement": "={{ $('Load Context').first().json.mid }}"
-        }
-      },
-      "id": "4639d8d0-78b8-4e5b-9b33-3d2505f36b59",
-      "name": "Recheck Bot Sent",
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2.6,
-      "position": [
-        3968,
-        928
-      ],
-      "credentials": {
-        "postgres": {
-          "id": "zCkt16eDshACnYEn",
-          "name": "Postgres account"
-        }
-      },
-      "notes": "Повторная проверка закрывает гонку."
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": "",
-            "typeValidation": "strict",
-            "version": 3
-          },
-          "conditions": [
-            {
-              "id": "939ba738-ddd5-5674-b924-2d507918aa64",
-              "leftValue": "={{ $json.is_bot_echo }}",
-              "rightValue": "",
-              "operator": {
-                "type": "boolean",
-                "operation": "true",
-                "singleValue": true
-              }
-            }
-          ],
-          "combinator": "and"
-        },
-        "options": {}
-      },
-      "id": "28dddc7c-26fe-46ee-9e27-7acb665ba40c",
-      "name": "Is Echo Retry?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.3,
-      "position": [
-        4192,
-        928
-      ],
-      "notes": "Если запись нашлась — это наше эхо."
-    },
-    {
-      "parameters": {
-        "operation": "executeQuery",
-        "query": "\nWITH up AS (\n  UPDATE leads SET muted_until = now() + make_interval(hours => $4)\n  WHERE tenant_id = $1 AND channel = $2 AND customer_id = $3\n  RETURNING 1\n), ins AS (\n  INSERT INTO leads (tenant_id, channel, customer_id, muted_until)\n  SELECT $1, $2, $3, now() + make_interval(hours => $4)\n  WHERE NOT EXISTS (SELECT 1 FROM up)\n  RETURNING 1\n)\nSELECT 1 AS ok;\n",
-        "options": {
-          "queryReplacement": "={{ $('Load Context').first().json.tenant_id }},{{ $('Load Context').first().json.channel }},{{ $('Load Context').first().json.customer_id }},{{ $('Load Context').first().json.config.behavior.mute_hours }}"
-        }
-      },
-      "id": "65af14ec-4434-48b2-bf1d-aec3803406cf",
-      "name": "Set Mute",
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2.6,
-      "position": [
-        4400,
-        1008
-      ],
-      "credentials": {
-        "postgres": {
-          "id": "zCkt16eDshACnYEn",
-          "name": "Postgres account"
-        }
-      },
-      "notes": "Человек ответил сам — бот замолкает на mute_hours."
     },
     {
       "parameters": {
@@ -1999,17 +1525,212 @@
     },
     {
       "parameters": {
-        "jsCode": "const ctx = $input.first().json ?? {};\nconst reply = String(ctx.reply ?? '').trim();\nconst sessionId = String(ctx.customer_id ?? ctx.event?.sender_id ?? '');\nconst outId = String(ctx.mid || (Date.now() + '-' + Math.random().toString(36).slice(2))) + ':out';\nreturn [{ json: {\n  ...ctx,\n  web_reply: reply,\n  session_id: sessionId,\n  message_id: outId,\n  response_body: JSON.stringify({ reply, session_id: sessionId })\n} }];"
+        "httpMethod": "POST",
+        "path": "ai-sales-agent-web",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
       },
-      "id": "88859637-d8f1-4c43-9da3-79e5bc439ab5",
+      "id": "0eddfd20-936c-4ebc-a76f-ace101914e96",
+      "name": "Web Chat Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        304
+      ],
+      "webhookId": "73204272-f109-4583-8254-289a5f6b3399",
+      "notes": "POST {site_key, session_id, message_id, text, page_url}. Перед продакшеном замените Allowed Origins (CORS) на домены клиента."
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ reply: null, ignored: true }) }}",
+        "options": {}
+      },
+      "id": "f15b753e-2bba-4f55-8451-9e7e805947ca",
+      "name": "Respond Empty",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1760,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "8014e4d5-0eb3-4ca5-986e-57ac5a6723ad",
+              "leftValue": "={{ !$json.page_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "0a70f48d-eb54-4b3d-99a2-27ece88828cf",
+      "name": "Is Duplicate?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1984,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ reply: null, duplicate: true }) }}",
+        "options": {}
+      },
+      "id": "e9f48a9b-cc75-4f46-9e5a-a38579fab5fa",
+      "name": "Respond Duplicate",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        2208,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ reply: 'Чат временно недоступен. Обновите страницу и попробуйте ещё раз.', error: true }) }}",
+        "options": {
+          "responseCode": 404
+        }
+      },
+      "id": "77ab6684-06b7-4ea8-a3fc-0441c5f862ba",
+      "name": "Respond Tenant Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        2208,
+        700
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const j = $input.first().json;\nconst hook = $('Web Chat Webhook').first().json;\nconst origin = String((hook.headers ?? {}).origin ?? '').replace(/\\/+$/, '').toLowerCase();\nconst cfg = j.config ?? {};\nconst allowed = (Array.isArray(cfg.allowed_origins) ? cfg.allowed_origins : [])\n  .map(o => String(o).replace(/\\/+$/, '').toLowerCase()).filter(Boolean);\nlet block = 0;\nif (allowed.length && !allowed.includes('*') && !allowed.includes(origin)) block = 403;\nif (!block) {\n  const limit = Math.max(1, Number(cfg.rate_limit_per_min ?? 20));\n  const sd = $getWorkflowStaticData('global');\n  const now = Date.now();\n  sd.rl = sd.rl ?? {};\n  const key = String(j.tenant_id) + ':' + String(j.event?.sender_id ?? '');\n  const arr = (sd.rl[key] ?? []).filter(t => now - t < 60000);\n  if (arr.length >= limit) block = 429; else arr.push(now);\n  sd.rl[key] = arr;\n  const keys = Object.keys(sd.rl);\n  if (keys.length > 5000) for (const k of keys) if (!sd.rl[k].some(t => now - t < 60000)) delete sd.rl[k];\n}\nreturn [{ json: { ...j, block_code: block } }];\n"
+      },
+      "id": "2ba28831-1665-4150-aeea-2134bb3be8cc",
+      "name": "Guard",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1984,
+        420
+      ],
+      "notes": "Проверка Origin по tenant.config.allowed_origins (пусто = разрешено всем) и rate limit по tenant.config.rate_limit_per_min (по умолчанию 20/мин на сессию). Счётчики хранятся в static data workflow (работает в активном workflow)."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "7a93777d-4209-4220-9372-3e19c9277937",
+              "leftValue": "={{ $json.block_code === 0 }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "01ab3b60-f77f-4471-987f-37aebc8d0c13",
+      "name": "Guard OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2100,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ reply: $json.block_code === 429 ? 'Слишком много сообщений. Подождите минуту и попробуйте снова.' : 'Чат недоступен на этом сайте.', error: true }) }}",
+        "options": {
+          "responseCode": "={{ $json.block_code }}"
+        }
+      },
+      "id": "37ab9c3d-591a-46df-bb04-e49fb3ad5c7e",
+      "name": "Respond Blocked",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        2208,
+        840
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ reply: null, muted: true }) }}",
+        "options": {}
+      },
+      "id": "3e7b6162-d052-4ecd-a109-2057200283d9",
+      "name": "Respond Muted",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        3088,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ reply: null, muted: true }) }}",
+        "options": {}
+      },
+      "id": "dacd536f-bc7a-4b0a-b7a3-79a99abafed5",
+      "name": "Respond Silent",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        4000,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $input.first().json ?? {};\nconst reply = String(ctx.reply ?? '').trim();\nconst sessionId = String(ctx.customer_id ?? ctx.event?.sender_id ?? '');\nreturn [{ json: { ...ctx, web_reply: reply, session_id: sessionId,\n  response_body: JSON.stringify({ reply, session_id: sessionId }) } }];\n"
+      },
+      "id": "029fdb44-7696-4cc2-8c4a-846e377075ba",
       "name": "Build Web Reply",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        7712,
+        4400,
         400
-      ],
-      "notes": "Единый ответ веб-чату: склеенные чанки не нужны, отдаём полный текст одним JSON."
+      ]
     },
     {
       "parameters": {
@@ -2017,159 +1738,60 @@
         "responseBody": "={{ $json.response_body }}",
         "options": {}
       },
-      "id": "1ad16a1a-a0b8-47d5-9733-e33cff9f92e4",
+      "id": "a8e561ad-b4b3-4119-b7e8-5b8aa518145d",
       "name": "Respond Chat",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.5,
       "position": [
-        7920,
+        4620,
         400
       ],
-      "notes": "Синхронный ответ виджета: { reply, session_id }."
+      "notes": "Ответ клиенту уходит здесь. Дальше (лид, Telegram, Sheets, CRM, метрики) выполняется уже после ответа."
     },
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ JSON.stringify({ reply: null, muted: true }) }}",
+        "responseBody": "={{ JSON.stringify({ reply: $json.fallback_text, error: true }) }}",
         "options": {}
       },
-      "id": "f9957185-322e-419b-9ff3-122e6511ebe0",
-      "name": "Respond Muted",
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1.5,
-      "position": [
-        3312,
-        304
-      ],
-      "notes": "Режим «бот молчит»: пустой reply + muted."
-    },
-    {
-      "parameters": {
-        "respondWith": "json",
-        "responseBody": "={{ JSON.stringify({ reply: null, muted: true }) }}",
-        "options": {}
-      },
-      "id": "586a425d-2d6d-42fb-b30f-40e25de380f2",
-      "name": "Respond Silent",
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1.5,
-      "position": [
-        4400,
-        176
-      ],
-      "notes": "Сообщение перекрыто более новым (debounce): тихий ответ, запрос не висит."
-    },
-    {
-      "parameters": {
-        "respondWith": "json",
-        "responseBody": "={{ JSON.stringify({ reply: null, muted: true }) }}",
-        "options": {}
-      },
-      "id": "e1e6579f-5194-4e06-8fdc-4efba0a13c5f",
-      "name": "Respond Empty",
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1.5,
-      "position": [
-        1552,
-        192
-      ],
-      "notes": "Пустое/служебное событие: тихий ответ, чтобы виджет не ждал таймаут."
-    },
-    {
-      "parameters": {
-        "respondWith": "json",
-        "responseBody": "={{ JSON.stringify({ reply: 'Чат временно недоступен. Обновите страницу и попробуйте ещё раз.', error: true }) }}",
-        "options": {}
-      },
-      "id": "996d8d3b-ec32-4a03-ad3a-e0f4ff926de6",
-      "name": "Respond Tenant Error",
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1.5,
-      "position": [
-        1984,
-        736
-      ],
-      "notes": "Неизвестный site_key или дубль message_id: ошибка клиенту."
-    },
-    {
-      "parameters": {
-        "respondWith": "json",
-        "responseBody": "={{ JSON.stringify({ reply: $json.config?.behavior?.ai_error_fallback_text || 'Извините, сейчас не могу ответить. Передам сообщение менеджеру.', error: true }) }}",
-        "options": {}
-      },
-      "id": "2f3518d4-fe34-4c12-8341-0dee1ddf5f17",
-      "name": "Respond Prompt Error",
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1.5,
-      "position": [
-        6608,
-        688
-      ],
-      "notes": "Промпт/KB не готовы: клиент получает fallback, админ — алерт."
-    },
-    {
-      "parameters": {
-        "respondWith": "json",
-        "responseBody": "={{ JSON.stringify({ reply: $json.fallback_text || 'Извините, сейчас не могу ответить.', error: true }) }}",
-        "options": {}
-      },
-      "id": "c014bec4-f4d8-4520-bb85-592e2ba72858",
+      "id": "f3702ab2-1db4-4811-a457-2901ad0d2117",
       "name": "Respond Invalid Fallback",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.5,
       "position": [
-        7712,
-        544
-      ],
-      "notes": "Невалидный вывод агента: fallback клиенту."
+        4000,
+        640
+      ]
     },
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ JSON.stringify({ reply: $json.fallback_text || 'Извините, сейчас не могу ответить.', error: true }) }}",
+        "responseBody": "={{ JSON.stringify({ reply: $json.fallback_text, error: true }) }}",
         "options": {}
       },
-      "id": "f8b9fa5d-6b01-4b14-a1c9-33aa7ab0d5fb",
+      "id": "259b6fb4-5185-4a62-b341-96b3d247b58a",
       "name": "Respond AI Fallback",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.5,
       "position": [
-        7040,
-        608
-      ],
-      "notes": "Сбой AI: fallback клиенту."
+        4000,
+        780
+      ]
     },
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ JSON.stringify({ reply: $json.fallback_text || 'Напишите, пожалуйста, текстом.', error: true }) }}",
+        "responseBody": "={{ JSON.stringify({ reply: ($json.config?.behavior?.ai_error_fallback_text || 'Извините, сейчас не могу ответить.'), error: true }) }}",
         "options": {}
       },
-      "id": "792d6bff-a74f-46d8-81e4-0b338398dd17",
-      "name": "Respond Fallback",
+      "id": "c5d5c6f8-ecd7-44f3-b2b7-fe1810d85299",
+      "name": "Respond Prompt Error",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.5,
       "position": [
-        3968,
-        768
-      ],
-      "notes": "Сбой аудио: fallback клиенту (ветка недоступна для веб-чата)."
-    },
-    {
-      "parameters": {
-        "respondWith": "json",
-        "responseBody": "={{ JSON.stringify({ reply: $('Load Context').first().json.config.behavior.unsupported_reply_text, error: true }) }}",
-        "options": {}
-      },
-      "id": "2c56736c-f924-49a2-9d25-aaa937d022e4",
-      "name": "Respond Unsupported",
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1.5,
-      "position": [
-        3744,
-        688
-      ],
-      "notes": "Неподдерживаемое вложение: вежливый отказ (ветка недостижима без attachments)."
+        4000,
+        920
+      ]
     }
   ],
   "pinData": {
@@ -2177,6 +1799,7 @@
       {
         "json": {
           "headers": {
+            "origin": "https://example.com",
             "content-type": "application/json"
           },
           "params": {},
@@ -2187,9 +1810,7 @@
             "message_id": "22222222-2222-4222-8222-222222222222",
             "text": "Здравствуйте! Расскажите про услуги и цены.",
             "page_url": "https://example.com/pricing"
-          },
-          "webhookUrl": "https://YOUR-N8N-HOST/webhook/ai-sales-agent-web",
-          "executionMode": "production"
+          }
         }
       }
     ]
@@ -2211,6 +1832,11 @@
         [
           {
             "node": "Log Ignored Event",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Respond Empty",
             "type": "main",
             "index": 0
           }
@@ -2239,14 +1865,14 @@
       "main": [
         [
           {
-            "node": "Load Context",
+            "node": "Guard",
             "type": "main",
             "index": 0
           }
         ],
         [
           {
-            "node": "Log Unknown Page",
+            "node": "Is Duplicate?",
             "type": "main",
             "index": 0
           }
@@ -2293,6 +1919,11 @@
             "node": "Notify Muted",
             "type": "main",
             "index": 0
+          },
+          {
+            "node": "Respond Muted",
+            "type": "main",
+            "index": 0
           }
         ],
         [
@@ -2312,31 +1943,21 @@
             "type": "main",
             "index": 0
           }
-        ],
+        ]
+      ]
+    },
+    "Insert Pending": {
+      "main": [
         [
           {
-            "node": "Download Audio",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Media Window",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Check Bot Sent",
+            "node": "Restore Context",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Insert Pending": {
+    "Restore Context": {
       "main": [
         [
           {
@@ -2429,24 +2050,6 @@
     },
     "Load Lead": {
       "main": [
-        [
-          {
-            "node": "Has Profile?",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Has Profile?": {
-      "main": [
-        [
-          {
-            "node": "Merge Profile",
-            "type": "main",
-            "index": 0
-          }
-        ],
         [
           {
             "node": "Merge Profile",
@@ -2893,27 +2496,16 @@
         ]
       ]
     },
-    "Log Sent": {
-      "main": [
-        [
-          {
-            "node": "Build Summary",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "Invalid Output": {
       "main": [
         [
           {
-            "node": "Respond Invalid Fallback",
+            "node": "Format Error Alert",
             "type": "main",
             "index": 0
           },
           {
-            "node": "Format Error Alert",
+            "node": "Respond Invalid Fallback",
             "type": "main",
             "index": 0
           }
@@ -2924,12 +2516,12 @@
       "main": [
         [
           {
-            "node": "Respond AI Fallback",
+            "node": "Format Error Alert",
             "type": "main",
             "index": 0
           },
           {
-            "node": "Format Error Alert",
+            "node": "Respond AI Fallback",
             "type": "main",
             "index": 0
           }
@@ -2940,166 +2532,12 @@
       "main": [
         [
           {
+            "node": "Format Error Alert",
+            "type": "main",
+            "index": 0
+          },
+          {
             "node": "Respond Prompt Error",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Format Error Alert",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Download Audio": {
-      "main": [
-        [
-          {
-            "node": "Transcribe Audio",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Voice Fallback",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Transcribe Audio": {
-      "main": [
-        [
-          {
-            "node": "Voice Input",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Voice Fallback",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Voice Input": {
-      "main": [
-        [
-          {
-            "node": "Load Lead",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Voice Fallback": {
-      "main": [
-        [
-          {
-            "node": "Respond Fallback",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Format Error Alert",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Media Window": {
-      "main": [
-        [
-          {
-            "node": "Media Allowed?",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Media Allowed?": {
-      "main": [
-        [
-          {
-            "node": "Respond Unsupported",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Check Bot Sent": {
-      "main": [
-        [
-          {
-            "node": "Is Bot Echo?",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Is Bot Echo?": {
-      "main": [
-        [
-          {
-            "node": "Cleanup Sent",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Wait Echo",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Wait Echo": {
-      "main": [
-        [
-          {
-            "node": "Recheck Bot Sent",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Recheck Bot Sent": {
-      "main": [
-        [
-          {
-            "node": "Is Echo Retry?",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Is Echo Retry?": {
-      "main": [
-        [
-          {
-            "node": "Cleanup Sent",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Set Mute",
             "type": "main",
             "index": 0
           }
@@ -3111,6 +2549,69 @@
         [
           {
             "node": "Normalize Events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Duplicate?": {
+      "main": [
+        [
+          {
+            "node": "Respond Duplicate",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Unknown Page",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Respond Tenant Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guard": {
+      "main": [
+        [
+          {
+            "node": "Guard OK?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guard OK?": {
+      "main": [
+        [
+          {
+            "node": "Load Context",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Blocked",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Stop Superseded": {
+      "main": [
+        [
+          {
+            "node": "Respond Silent",
             "type": "main",
             "index": 0
           }
@@ -3132,62 +2633,7 @@
       "main": [
         [
           {
-            "node": "Log Sent",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Respond Unsupported": {
-      "main": [
-        [
-          {
-            "node": "Record Media",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Log Ignored Event": {
-      "main": [
-        [
-          {
-            "node": "Respond Empty",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Log Unknown Page": {
-      "main": [
-        [
-          {
-            "node": "Respond Tenant Error",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Notify Muted": {
-      "main": [
-        [
-          {
-            "node": "Respond Muted",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Stop Superseded": {
-      "main": [
-        [
-          {
-            "node": "Respond Silent",
+            "node": "Build Summary",
             "type": "main",
             "index": 0
           }
@@ -3195,18 +2641,18 @@
       ]
     }
   },
-  "active": true,
+  "active": false,
   "settings": {
     "executionOrder": "v1",
     "binaryMode": "separate",
     "availableInMCP": true
   },
-  "versionId": "78d0f5d4-a246-4f45-8062-f09679cfbd97",
+  "versionId": "bc0875c1-8725-47f0-b747-f6c7f769aa02",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "2679d5680b6be7d2a2d102110308d9be0d01ffce696a3183afe896aaabcb1e04"
   },
   "nodeGroups": [],
-  "id": "wcWebChatA7Lm4Tz1",
+  "id": "qOt1UbAupbBtmSRl",
   "tags": []
 }
