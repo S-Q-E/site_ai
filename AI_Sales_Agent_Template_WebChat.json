@@ -55,7 +55,7 @@
         "operation": "executeQuery",
         "query": "INSERT INTO ignored_events (tenant_id, page_id, kind, mid) VALUES (NULL, $1, $2, NULLIF($3,'')) RETURNING 1;",
         "options": {
-          "queryReplacement": "={{ $json.page_id }},{{ $json.event_kind }},{{ $json.mid }}"
+          "queryReplacement": "={{ [ ($json.page_id) ?? null, ($json.event_kind) ?? null, ($json.mid) ?? null ] }}"
         }
       },
       "id": "de8bd354-fc0e-45ef-bdb0-88ff8958eeb1",
@@ -79,7 +79,7 @@
         "operation": "executeQuery",
         "query": "\nWITH ins AS (\n  INSERT INTO processed_messages (mid, tenant_id, channel, event)\n  VALUES ($1, NULL, 'web', convert_from(decode($2,'base64'),'UTF8')::jsonb)\n  ON CONFLICT (mid) DO NOTHING\n  RETURNING event\n)\nSELECT ins.event,\n       (ins.event->>'page_id') AS page_id,\n       (ins.event->>'mid') AS mid,\n       t.tenant_id,\n       t.config\nFROM ins\nLEFT JOIN tenants t\n  ON t.external_page_id = (ins.event->>'page_id')\n AND t.channel = 'web'\n AND t.is_active = true;\n",
         "options": {
-          "queryReplacement": "={{ $json.mid }},{{ $json.event_b64 }}"
+          "queryReplacement": "={{ [ ($json.mid) ?? null, ($json.event_b64) ?? null ] }}"
         }
       },
       "id": "4fb84922-5487-4662-94be-ff323ca6d5ec",
@@ -153,7 +153,7 @@
         "operation": "executeQuery",
         "query": "SELECT COALESCE((SELECT muted_until > now() FROM leads WHERE tenant_id = $1 AND channel = $2 AND customer_id = $3), false) AS is_muted;",
         "options": {
-          "queryReplacement": "={{ $json.tenant_id }},{{ $json.channel }},{{ $json.customer_id }}"
+          "queryReplacement": "={{ [ ($json.tenant_id) ?? null, ($json.channel) ?? null, ($json.customer_id) ?? null ] }}"
         }
       },
       "id": "7158d385-b81a-479f-9760-a6b9636d8a1c",
@@ -316,7 +316,7 @@
         "operation": "executeQuery",
         "query": "INSERT INTO pending_messages (tenant_id, channel, customer_id, mid, text_b64) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (mid) DO NOTHING RETURNING id;",
         "options": {
-          "queryReplacement": "={{ $json.tenant_id }},{{ $json.channel }},{{ $json.customer_id }},{{ $json.mid }},{{ $json.text_b64 }}"
+          "queryReplacement": "={{ [ ($json.tenant_id) ?? null, ($json.channel) ?? null, ($json.customer_id) ?? null, ($json.mid) ?? null, ($json.text_b64) ?? null ] }}"
         }
       },
       "id": "09925a5b-de29-4292-b3af-962c15fbcaa2",
@@ -405,7 +405,7 @@
         "operation": "executeQuery",
         "query": "\nSELECT EXISTS (\n  SELECT 1 FROM pending_messages p\n  WHERE p.tenant_id = $1 AND p.channel = $2 AND p.customer_id = $3 AND p.processed_at IS NULL\n    AND p.id > (SELECT id FROM pending_messages\n                WHERE tenant_id = $1 AND channel = $2 AND customer_id = $3 AND mid = $4\n                ORDER BY id DESC LIMIT 1)\n) AS has_newer;\n",
         "options": {
-          "queryReplacement": "={{ $('Load Context').first().json.tenant_id }},{{ $('Load Context').first().json.channel }},{{ $('Load Context').first().json.customer_id }},{{ $('Load Context').first().json.mid }}"
+          "queryReplacement": "={{ [ ($('Load Context').first().json.tenant_id) ?? null, ($('Load Context').first().json.channel) ?? null, ($('Load Context').first().json.customer_id) ?? null, ($('Load Context').first().json.mid) ?? null ] }}"
         }
       },
       "id": "9c71bbae-cf91-42f7-889c-2775d55736c0",
@@ -476,7 +476,7 @@
         "operation": "executeQuery",
         "query": "\nWITH claimed AS (\n  UPDATE pending_messages SET processed_at = now()\n  WHERE tenant_id = $1 AND channel = $2 AND customer_id = $3 AND processed_at IS NULL\n  RETURNING id, text_b64\n)\nSELECT string_agg(convert_from(decode(text_b64,'base64'),'UTF8'), E'\\n' ORDER BY id) AS text,\n       count(*)::int AS messages_count\nFROM claimed;\n",
         "options": {
-          "queryReplacement": "={{ $('Load Context').first().json.tenant_id }},{{ $('Load Context').first().json.channel }},{{ $('Load Context').first().json.customer_id }}"
+          "queryReplacement": "={{ [ ($('Load Context').first().json.tenant_id) ?? null, ($('Load Context').first().json.channel) ?? null, ($('Load Context').first().json.customer_id) ?? null ] }}"
         }
       },
       "id": "af3e094d-e772-4832-8aa5-e07f2b896f8e",
@@ -514,7 +514,7 @@
         "operation": "executeQuery",
         "query": "(SELECT username, display_name, phone, service_interest, city, lead_status,\n       COALESCE(lead_data, '{}'::jsonb) AS lead_data, summary, muted_until,\n       lead_notified_at, handover_notified_at, handover_reason\nFROM leads\nWHERE tenant_id = $1 AND channel = $2 AND customer_id = $3\nLIMIT 1)\nUNION ALL\n(SELECT NULL, NULL, NULL, NULL, NULL, NULL,\n       '{}'::jsonb, NULL, NULL, NULL, NULL, NULL\nWHERE NOT EXISTS (\n  SELECT 1 FROM leads\n  WHERE tenant_id = $1 AND channel = $2 AND customer_id = $3\n));",
         "options": {
-          "queryReplacement": "={{ $('Load Context').first().json.tenant_id }},{{ $('Load Context').first().json.channel }},{{ $('Load Context').first().json.customer_id }}"
+          "queryReplacement": "={{ [ ($('Load Context').first().json.tenant_id) ?? null, ($('Load Context').first().json.channel) ?? null, ($('Load Context').first().json.customer_id) ?? null ] }}"
         }
       },
       "id": "bcce991e-524c-4e82-8165-f42ab27dfbd2",
@@ -552,7 +552,7 @@
         "operation": "executeQuery",
         "query": "SELECT system_prompt FROM tenant_prompts WHERE tenant_id = $1 AND is_active = true ORDER BY version DESC LIMIT 1;",
         "options": {
-          "queryReplacement": "={{ $('Merge Profile').first().json.tenant_id }}"
+          "queryReplacement": "={{ [ ($('Merge Profile').first().json.tenant_id) ?? null ] }}"
         }
       },
       "id": "c243bbc7-3184-4d77-acc1-a6205412022c",
@@ -577,7 +577,7 @@
         "operation": "executeQuery",
         "query": "SELECT COALESCE(jsonb_object_agg(key, value), '{}'::jsonb) AS kb FROM tenant_kb WHERE tenant_id = $1;",
         "options": {
-          "queryReplacement": "={{ $('Merge Profile').first().json.tenant_id }}"
+          "queryReplacement": "={{ [ ($('Merge Profile').first().json.tenant_id) ?? null ] }}"
         }
       },
       "id": "dc92a54b-720f-490e-978e-07f5f86ccb5a",
@@ -847,7 +847,7 @@
         "operation": "executeQuery",
         "query": "\nWITH prev AS (\n  SELECT lead_status, lead_notified_at, handover_notified_at, handover_reason\n  FROM leads WHERE tenant_id = $1 AND channel = $2 AND customer_id = $3\n), up AS (\n  INSERT INTO leads (\n    tenant_id, channel, customer_id, username, display_name, phone, service_interest, city,\n    lead_status, lead_data, summary, handover_required, handover_reason\n  ) VALUES (\n    $1, $2, $3,\n    NULLIF(convert_from(decode($4,'base64'),'UTF8'),''),\n    NULLIF(convert_from(decode($5,'base64'),'UTF8'),''),\n    NULLIF(convert_from(decode($6,'base64'),'UTF8'),''),\n    NULLIF(convert_from(decode($7,'base64'),'UTF8'),''),\n    NULLIF(convert_from(decode($8,'base64'),'UTF8'),''),\n    $9,\n    convert_from(decode($10,'base64'),'UTF8')::jsonb,\n    NULLIF(convert_from(decode($11,'base64'),'UTF8'),''),\n    $12::boolean,\n    NULLIF(convert_from(decode($13,'base64'),'UTF8'),'')\n  )\n  ON CONFLICT (tenant_id, channel, customer_id) DO UPDATE SET\n    username         = COALESCE(EXCLUDED.username, leads.username),\n    display_name     = COALESCE(EXCLUDED.display_name, leads.display_name),\n    phone            = COALESCE(EXCLUDED.phone, leads.phone),\n    service_interest = COALESCE(EXCLUDED.service_interest, leads.service_interest),\n    city             = COALESCE(EXCLUDED.city, leads.city),\n    lead_data        = leads.lead_data || EXCLUDED.lead_data,\n    lead_status      = CASE WHEN EXCLUDED.lead_status = 'in_progress' THEN leads.lead_status ELSE EXCLUDED.lead_status END,\n    summary          = COALESCE(NULLIF(EXCLUDED.summary,''), leads.summary),\n    handover_required = EXCLUDED.handover_required OR leads.handover_required,\n    handover_reason  = COALESCE(NULLIF(EXCLUDED.handover_reason,''), leads.handover_reason),\n    updated_at       = now()\n  RETURNING lead_status, handover_required, handover_reason\n)\nSELECT up.lead_status, up.handover_required, up.handover_reason,\n  (($14::boolean) AND up.lead_status IN ('qualified','handover')\n   AND (SELECT lead_notified_at FROM prev) IS NULL) AS should_notify_lead,\n  (($15::boolean) AND up.handover_required AND (\n      (SELECT handover_notified_at FROM prev) IS NULL\n      OR (SELECT handover_reason FROM prev) IS DISTINCT FROM up.handover_reason\n      OR (SELECT handover_notified_at FROM prev) < now() - make_interval(hours => $16)\n  )) AS should_notify_handover\nFROM up;\n",
         "options": {
-          "queryReplacement": "={{ $json.tenant_id }},{{ $json.channel }},{{ $json.customer_id }},{{ $json.username_b64 }},{{ $json.display_name_b64 }},{{ $json.phone_b64 }},{{ $json.service_b64 }},{{ $json.city_b64 }},{{ $json.lead_status }},{{ $json.lead_data_b64 }},{{ $json.summary_b64 }},{{ $json.handover_required }},{{ $json.handover_reason_b64 }},{{ $json.config.notifications.notify_on_qualified_lead }},{{ $json.config.notifications.notify_on_handover }},{{ $json.config.notifications.handover_dedupe_hours }}"
+          "queryReplacement": "={{ [ ($json.tenant_id) ?? null, ($json.channel) ?? null, ($json.customer_id) ?? null, ($json.username_b64) ?? null, ($json.display_name_b64) ?? null, ($json.phone_b64) ?? null, ($json.service_b64) ?? null, ($json.city_b64) ?? null, ($json.lead_status) ?? null, ($json.lead_data_b64) ?? null, ($json.summary_b64) ?? null, ($json.handover_required) ?? null, ($json.handover_reason_b64) ?? null, ($json.config.notifications.notify_on_qualified_lead) ?? null, ($json.config.notifications.notify_on_handover) ?? null, ($json.config.notifications.handover_dedupe_hours) ?? null ] }}"
         }
       },
       "id": "8c8f1e1e-e456-4a60-ad31-88bb70a04527",
@@ -963,7 +963,7 @@
         "operation": "executeQuery",
         "query": "\nWITH up AS (\n  UPDATE leads SET handover_notified_at = now(), handover_reason = $4\n  WHERE tenant_id = $1 AND channel = $2 AND customer_id = $3\n  RETURNING 1\n) SELECT 1 AS ok;\n",
         "options": {
-          "queryReplacement": "={{ $('Build Handover').first().json.tenant_id }},{{ $('Build Handover').first().json.channel }},{{ $('Build Handover').first().json.customer_id }},{{ $('Build Handover').first().json.handover_reason }}"
+          "queryReplacement": "={{ [ ($('Build Handover').first().json.tenant_id) ?? null, ($('Build Handover').first().json.channel) ?? null, ($('Build Handover').first().json.customer_id) ?? null, ($('Build Handover').first().json.handover_reason) ?? null ] }}"
         }
       },
       "id": "722fcd1a-9cfa-4a40-bc1a-37ce48882959",
@@ -1227,7 +1227,7 @@
         "operation": "executeQuery",
         "query": "\nINSERT INTO metrics (\n  tenant_id, channel, customer_id, message_id, message_type, message_length, language,\n  ai_model, ai_latency_ms, total_latency_ms, is_lead, lead_status, handover_required,\n  extracted_data, ig_send_status, chunks_count, tokens_in, tokens_out, execution_id\n) VALUES (\n  $1, $2, $3, NULLIF($4,''), $5, $6, $7, $8, $9, $10, $11::boolean, $12, $13::boolean,\n  convert_from(decode($14,'base64'),'UTF8')::jsonb, $15, $16, $17, $18, $19\n) RETURNING 1;\n",
         "options": {
-          "queryReplacement": "={{ $('Build Summary').first().json.tenant_id }},{{ $('Build Summary').first().json.channel }},{{ $('Build Summary').first().json.customer_id }},{{ $('Build Summary').first().json.mid }},{{ $('Build Summary').first().json.event.event_kind }},{{ $('Build Summary').first().json.text.length }},{{ $('Build Summary').first().json.lead_data.language }},{{ $('Build Summary').first().json.config.agent.model }},{{ $('Build Summary').first().json.ai_latency_ms }},{{ $('Build Summary').first().json.total_latency_ms }},{{ $('Build Summary').first().json.is_lead }},{{ $('Build Summary').first().json.lead_status }},{{ $('Build Summary').first().json.handover_required }},{{ $('Build Summary').first().json.extracted_b64 }},{{ $('Build Summary').first().json.ig_send_status }},{{ $('Build Summary').first().json.chunks_count }},{{ $('Build Summary').first().json.tokens_in }},{{ $('Build Summary').first().json.tokens_out }},{{ $execution.id }}"
+          "queryReplacement": "={{ [ ($('Build Summary').first().json.tenant_id) ?? null, ($('Build Summary').first().json.channel) ?? null, ($('Build Summary').first().json.customer_id) ?? null, ($('Build Summary').first().json.mid) ?? null, ($('Build Summary').first().json.event.event_kind) ?? null, ($('Build Summary').first().json.text.length) ?? null, ($('Build Summary').first().json.lead_data.language) ?? null, ($('Build Summary').first().json.config.agent.model) ?? null, ($('Build Summary').first().json.ai_latency_ms) ?? null, ($('Build Summary').first().json.total_latency_ms) ?? null, ($('Build Summary').first().json.is_lead) ?? null, ($('Build Summary').first().json.lead_status) ?? null, ($('Build Summary').first().json.handover_required) ?? null, ($('Build Summary').first().json.extracted_b64) ?? null, ($('Build Summary').first().json.ig_send_status) ?? null, ($('Build Summary').first().json.chunks_count) ?? null, ($('Build Summary').first().json.tokens_in) ?? null, ($('Build Summary').first().json.tokens_out) ?? null, ($execution.id) ?? null ] }}"
         }
       },
       "id": "85751103-d342-4f3e-9dcf-db3d103b1938",
@@ -1293,7 +1293,7 @@
         "operation": "executeQuery",
         "query": "INSERT INTO error_log (tenant_id, node_name, error_message, execution_id, customer_id, message_id, error_stage) VALUES (NULLIF($1,''), $2, convert_from(decode($3,'base64'),'UTF8'), $4, NULLIF($5,''), NULLIF($6,''), $7) RETURNING 1;",
         "options": {
-          "queryReplacement": "={{ $json.tenant_id }},{{ $json.node_name }},{{ $json.error_message_b64 }},{{ $execution.id }},{{ $json.customer_id }},{{ $json.mid }},{{ $json.error_stage }}"
+          "queryReplacement": "={{ [ ($json.tenant_id) ?? null, ($json.node_name) ?? null, ($json.error_message_b64) ?? null, ($execution.id) ?? null, ($json.customer_id) ?? null, ($json.mid) ?? null, ($json.error_stage) ?? null ] }}"
         }
       },
       "id": "07feab82-c753-4b62-8b8e-ad859dcca494",
@@ -1424,7 +1424,7 @@
         "operation": "executeQuery",
         "query": "\nWITH up AS (\n  UPDATE leads SET lead_notified_at = now()\n  WHERE tenant_id = $1 AND channel = $2 AND customer_id = $3\n  RETURNING 1\n) SELECT 1 AS ok;\n",
         "options": {
-          "queryReplacement": "={{ $('Build Lead Card').first().json.tenant_id }},{{ $('Build Lead Card').first().json.channel }},{{ $('Build Lead Card').first().json.customer_id }}"
+          "queryReplacement": "={{ [ ($('Build Lead Card').first().json.tenant_id) ?? null, ($('Build Lead Card').first().json.channel) ?? null, ($('Build Lead Card').first().json.customer_id) ?? null ] }}"
         }
       },
       "id": "efb54402-04ce-4c6e-98e1-8659bc0663ca",
@@ -1504,7 +1504,7 @@
         "operation": "executeQuery",
         "query": "INSERT INTO ignored_events (tenant_id, page_id, kind, mid) VALUES (NULL, $1, 'unknown_page', NULLIF($2,'')) RETURNING 1;",
         "options": {
-          "queryReplacement": "={{ $json.page_id }},{{ $json.mid }}"
+          "queryReplacement": "={{ [ ($json.page_id) ?? null, ($json.mid) ?? null ] }}"
         }
       },
       "id": "c7ff1630-fd7a-4f63-8228-64a918563793",
