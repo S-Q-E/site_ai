@@ -146,6 +146,24 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f seed_tenant_web.sql
 3. `allowed_origins` → домены сайта.
 4. `agent.model` → модель, доступную вашему ключу OpenRouter.
 
+## Деплой на Railway (сервис `db-init`)
+
+В репозитории есть `Dockerfile` + `db/init.sh` — одноразовый сервис, который применяет
+`schema.sql` и (только на пустой базе) `seed_tenant_web.sql`, затем завершается.
+
+1. В проекте Railway (например, `feisty-prosperity`, где уже есть n8n и Postgres) создайте
+   сервис `db-init` из этого репозитория, ветка `main`.
+2. Переменная сервиса: `DATABASE_URL = ${{Postgres.DATABASE_URL}}`.
+3. Restart policy: `NEVER` (сервис должен отработать один раз и остановиться).
+4. После деплоя в логах: `[db-init] schema ok` → `[db-init] done`.
+
+Схема применяется в ту же базу, что использует n8n: таблицы проекта (`tenants`, `leads`,
+`metrics` и т.д.) с внутренними таблицами n8n не пересекаются. Если нужна отдельная база —
+создайте её и подставьте её URL в `DATABASE_URL`.
+
+Повторный деплой безопасен: `schema.sql` идемпотентен, а seed пропускается, если в `tenants`
+уже есть строки (демо-тенант не перезаписывается).
+
 ## Проверка
 
 ```bash
