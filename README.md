@@ -48,6 +48,10 @@ Workflow n8n для чат-виджета на сайте: входящий HTTP
 - `site_key` — публичный ключ сайта, лежит в `tenants.external_page_id` (`channel = 'web'`).
 - `page_url` попадает в карточки менеджера и в уведомление о mute.
 
+Виджет может присылать `message` вместо `text` и `mid` вместо `message_id` — `Normalize Events`
+принимает оба варианта. Если `site_key` не передан, используется `DEFAULT_SITE_KEY` из
+`Normalize Events` (по умолчанию `demo-site-key`) — удобно для односайтовых установок.
+
 ## Как устроен поток
 
 ```

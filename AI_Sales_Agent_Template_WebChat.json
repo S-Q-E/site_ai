@@ -3,7 +3,7 @@
   "nodes": [
     {
       "parameters": {
-        "jsCode": "const b = $json.body ?? {};\nconst text = String(b.text ?? '').trim().slice(0, 2000);\nconst sid = String(b.session_id ?? '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64);\nconst event = {\n  page_id: String(b.site_key ?? '').slice(0, 128),\n  channel: 'web',\n  sender_id: sid,\n  recipient_id: '',\n  mid: String(b.message_id || (Date.now() + '-' + Math.random().toString(36).slice(2))).slice(0, 128),\n  text,\n  attachments: [],\n  reply_to: null,\n  page_url: String(b.page_url ?? '').slice(0, 500),\n  timestamp: Date.now(),\n  event_kind: (text && sid) ? 'message' : 'unknown'\n};\nevent.event_b64 = Buffer.from(JSON.stringify(event), 'utf8').toString('base64');\nreturn [{ json: event }];\n"
+        "jsCode": "const b = $json.body ?? {};\nconst DEFAULT_SITE_KEY = 'demo-site-key';\nconst text = String(b.text ?? b.message ?? '').trim().slice(0, 2000);\nconst sid = String(b.session_id ?? '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64);\nconst event = {\n  page_id: String(b.site_key ?? b.siteKey ?? DEFAULT_SITE_KEY).slice(0, 128),\n  channel: 'web',\n  sender_id: sid,\n  recipient_id: '',\n  mid: String(b.message_id ?? b.mid ?? (Date.now() + '-' + Math.random().toString(36).slice(2))).slice(0, 128),\n  text,\n  attachments: [],\n  reply_to: null,\n  page_url: String(b.page_url ?? '').slice(0, 500),\n  timestamp: Date.now(),\n  event_kind: (text && sid) ? 'message' : 'unknown'\n};\nevent.event_b64 = Buffer.from(JSON.stringify(event), 'utf8').toString('base64');\nreturn [{ json: event }];\n"
       },
       "id": "03f9b8f1-4f7d-4a02-aa27-1fe92597b6dd",
       "name": "Normalize Events",
@@ -243,7 +243,8 @@
           ]
         },
         "additionalFields": {
-          "appendAttribution": false
+          "appendAttribution": false,
+          "parse_mode": "HTML"
         }
       },
       "id": "b8cad67f-98e2-4c5b-a01c-a9888b0fdb5c",
@@ -934,7 +935,8 @@
         "chatId": "={{ $json.config.integrations.telegram_enabled === true ? $json.config.notifications.telegram_chat_id : '' }}",
         "text": "={{ $json.handover_text }}",
         "additionalFields": {
-          "appendAttribution": false
+          "appendAttribution": false,
+          "parse_mode": "HTML"
         }
       },
       "id": "082be76d-791e-4a9e-b35c-885a3e023fb1",
@@ -1317,7 +1319,8 @@
         "chatId": "={{ $('Load Context').first().json.config.integrations.telegram_enabled === true ? $('Load Context').first().json.config.notifications.telegram_chat_id : '' }}",
         "text": "={{ $json.alert_text }}",
         "additionalFields": {
-          "appendAttribution": false
+          "appendAttribution": false,
+          "parse_mode": "HTML"
         }
       },
       "id": "b738de05-8b5f-458a-b3e6-4987da0bfeb7",
@@ -1395,7 +1398,8 @@
         "chatId": "={{ $json.config.integrations.telegram_enabled === true ? $json.config.notifications.telegram_chat_id : '' }}",
         "text": "={{ $json.lead_text }}",
         "additionalFields": {
-          "appendAttribution": false
+          "appendAttribution": false,
+          "parse_mode": "HTML"
         }
       },
       "id": "2aa7225d-a78c-4b50-a045-4c17b0a6f943",
