@@ -153,6 +153,18 @@ Workflow использует таблицы (см. `ai-sales-agent-template/dat
   для веб-чата всегда 1.
 - `tenants.external_page_id` уникален: один `site_key` — один тенант.
 
+## Google Sheets
+
+- Включение: `tenants.config.integrations.google_sheets_enabled = true`, `sheet_id`, `sheet_tab`.
+  Включить сам узел `Save Sheet` и выбрать credential недостаточно — `Sheet Enabled?` смотрит
+  на конфиг тенанта.
+- Заголовки в первой строке: `tenant_id`, `customer_id`, `username`, `name`, `phone`, `service`,
+  `city`, `status`, `summary`, `updated_at` (при записи в пустой лист n8n создаёт их сам).
+- `matchingColumns` должен начинаться с `customer_id`: узел Google Sheets (v4.7) матчит только
+  по первому столбцу из списка. Если первым стоит `tenant_id`, все сессии перезапишут одну строку.
+- `Cell Format = RAW` в опциях `Save Sheet`, иначе телефон вида `+1 202 555 0147` Google
+  воспримет как формулу и запишет `#ERROR!`.
+
 ## Заселение тенанта
 
 ```bash

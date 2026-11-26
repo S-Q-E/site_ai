@@ -1047,8 +1047,8 @@
             "updated_at": "={{ new Date().toISOString() }}"
           },
           "matchingColumns": [
-            "tenant_id",
-            "customer_id"
+            "customer_id",
+            "tenant_id"
           ],
           "schema": [
             {
@@ -1153,7 +1153,9 @@
             }
           ]
         },
-        "options": {}
+        "options": {
+          "cellFormat": "RAW"
+        }
       },
       "id": "5caec5c4-9a60-44f6-b425-ae9e6da34d15",
       "name": "Save Sheet",
@@ -1163,7 +1165,6 @@
         10800,
         320
       ],
-      "disabled": true,
       "onError": "continueRegularOutput",
       "notes": "Generic-маппинг: фиксированные колонки, матч по tenant+customer."
     },
