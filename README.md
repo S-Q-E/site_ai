@@ -87,7 +87,7 @@ Web Chat Webhook
 
 ```json
 {
-  "business": { "name": "Demo", "languages": ["ru"], "timezone": "Asia/Almaty" },
+  "business": { "name": "Demo", "languages": ["en", "ru"], "timezone": "Asia/Almaty" },
   "agent": { "model": "openai/gpt-4o-mini", "temperature": 0.3, "memory_window": 12 },
   "qualification": {
     "required_fields": [{ "key": "client_name", "label": "Имя" }],
@@ -115,6 +115,26 @@ Web Chat Webhook
   (ответ задерживается).
 - Если `telegram_enabled: false`, Telegram-узлы не вызываются; для error-пути нужен валидный
   credential либо `notify_on_error: false`.
+
+### Язык бота
+
+Язык ответа задают две вещи:
+
+1. `business.languages` — список поддерживаемых языков. Первый элемент становится
+   `language_default`, он же попадает в `{{languages}}` и в enum поля `lead_data.language`.
+2. `tenant_prompts.system_prompt` — правило выбора языка. Без явной инструкции модель
+   ориентируется на язык самого промпта и отвечает на нём всегда.
+
+Варианты:
+
+- только английский: `"languages": ["en"]` + правило «Always reply in English»;
+- только русский: `"languages": ["ru"]` + «Всегда отвечай по-русски»;
+- зеркалить язык клиента: `"languages": ["en", "ru"]` + «Reply in the same language as the
+  customer's latest message».
+
+Промпт хранится в `tenant_prompts` (одна активная версия). Меняется SQL-ом, а не через UI
+workflow. После изменения промпта или конфига перепубликовывать workflow не нужно — он читает
+их на каждом запросе.
 
 ## База данных
 

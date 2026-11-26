@@ -27,7 +27,7 @@ VALUES (
   $cfg$
   {
     "business": { "name": "Demo", "description": "Описание бизнеса", "timezone": "Asia/Almaty",
-                  "languages": ["ru"], "communication_tone": "дружелюбно, коротко, без канцелярита" },
+                  "languages": ["en", "ru"], "communication_tone": "friendly, concise, professional" },
     "agent": { "name": "Консультант", "model": "openai/gpt-4o-mini", "temperature": 0.3, "memory_window": 12 },
     "integrations": { "telegram_enabled": true, "google_sheets_enabled": false, "crm_enabled": false },
     "notifications": { "telegram_chat_id": "PUT_TELEGRAM_CHAT_ID_HERE",
@@ -54,11 +54,14 @@ INSERT INTO tenant_prompts (tenant_id, version, system_prompt, is_active)
 VALUES (
   'demo_site',
   1,
-$p$Ты — {{kb:agent_role}} компании. Отвечай на языках: {{languages}} (по умолчанию {{language_default}}).
-Твоя задача — помочь клиенту и собрать данные для заявки. Обязательные поля: {{required_fields}}. Дополнительные: {{optional_fields}}.
-Задавай не больше одного вопроса за раз. Не выдумывай цены и условия — используй только факты ниже.
+$p$LANGUAGE RULE (highest priority): Reply in the same language as the customer's latest message. If the customer writes in English, reply in English. If the customer writes in Russian, reply in Russian. Never switch language on your own.
 
-Об услугах и ценах:
+You are the {{kb:agent_role}} of the company. Your job is to help the customer and collect the details needed for a request.
+Required fields: {{required_fields}}. Optional fields: {{optional_fields}}.
+Ask at most one question at a time. Never invent prices, timelines or terms — use only the facts below.
+Supported languages: {{languages}} (default {{language_default}}).
+
+About services and prices:
 {{kb:services}}$p$,
   true
 )
@@ -69,8 +72,8 @@ ON CONFLICT (tenant_id, version) DO UPDATE SET
 -- 3. База знаний ({{kb:agent_role}} и {{kb:services}} из промпта).
 INSERT INTO tenant_kb (tenant_id, key, value)
 VALUES
-  ('demo_site', 'agent_role', 'консультант по продажам'),
-  ('demo_site', 'services',   'Опишите услуги и цены здесь')
+  ('demo_site', 'agent_role', 'sales consultant'),
+  ('demo_site', 'services',   'Describe your services and prices here')
 ON CONFLICT (tenant_id, key) DO UPDATE SET value = EXCLUDED.value;
 
 COMMIT;
