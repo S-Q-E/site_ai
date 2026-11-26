@@ -153,6 +153,15 @@ Workflow использует таблицы (см. `ai-sales-agent-template/dat
   для веб-чата всегда 1.
 - `tenants.external_page_id` уникален: один `site_key` — один тенант.
 
+### Несколько Telegram-чатов
+
+`notifications.telegram_chat_ids` — массив чатов. Основные узлы шлют в `telegram_chat_id`
+(первый чат), параллельные узлы `... 2` — в `telegram_chat_ids[1]`. Сейчас поддержано два чата.
+
+Чтобы бот мог писать в чат, аккаунт должен сначала открыть бота и нажать **Start**
+(иначе Telegram вернёт `Bad Request: chat not found`). Для группы нужен отрицательный chat_id
+вида `-100...`, и бот должен быть добавлен в группу.
+
 ## Google Sheets
 
 - Включение: `tenants.config.integrations.google_sheets_enabled = true`, `sheet_id`, `sheet_tab`.

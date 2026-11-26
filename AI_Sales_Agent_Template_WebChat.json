@@ -1797,6 +1797,143 @@
         4000,
         920
       ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.config.integrations.telegram_enabled === true ? ($json.config.notifications.telegram_chat_ids?.[1] ?? '') : '' }}",
+        "text": "=🔇 Бот молчит в этом диалоге (ручной режим менеджера).\n\n👤 Веб-чат, сессия: {{ $json.customer_id }}\n🌐 Страница: {{ $json.page_url || '—' }}\n\n💬 Сообщение: {{ $json.text }}",
+        "replyMarkup": "inlineKeyboard",
+        "inlineKeyboard": {
+          "rows": [
+            {
+              "row": {
+                "buttons": [
+                  {
+                    "text": "Возобновить бота",
+                    "additionalFields": {
+                      "callback_data": "=unmute:{{ $json.tenant_id }}:{{ $json.customer_id }}"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML"
+        }
+      },
+      "id": "272f7204-c0a0-4b7c-8f5a-d6cf3c0f1758",
+      "name": "Notify Muted 2",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        3088,
+        192
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "webhookId": "80ebca4b-d46b-41a4-8c90-24ecefc23dbb",
+      "credentials": {
+        "telegramApi": {
+          "id": "Bl5dMUlxAbvjD5e5",
+          "name": "tcs demo bot"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "notes": "Менеджер видит пропущенное сообщение и может вернуть бота."
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.config.integrations.telegram_enabled === true ? ($json.config.notifications.telegram_chat_ids?.[1] ?? '') : '' }}",
+        "text": "={{ $json.handover_text }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML"
+        }
+      },
+      "id": "897c99b5-ae99-464d-bdee-29bb7578ac2f",
+      "name": "Manager Alert 2",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        9904,
+        208
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "webhookId": "c81a8276-9fe4-455d-bfa9-5bbb7b19a21e",
+      "credentials": {
+        "telegramApi": {
+          "id": "Bl5dMUlxAbvjD5e5",
+          "name": "tcs demo bot"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "notes": "Handover-уведомление менеджеру."
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.config.integrations.telegram_enabled === true ? ($json.config.notifications.telegram_chat_ids?.[1] ?? '') : '' }}",
+        "text": "={{ $json.lead_text }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML"
+        }
+      },
+      "id": "f713fe40-34d3-4cad-a906-aefa7a215473",
+      "name": "Lead Alert 2",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        10128,
+        608
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "webhookId": "b8f66719-b565-4d15-96d9-8dc41b6d4032",
+      "credentials": {
+        "telegramApi": {
+          "id": "Bl5dMUlxAbvjD5e5",
+          "name": "tcs demo bot"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "notes": "Уведомление о квалифицированном лиде."
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Load Context').first().json.config.integrations.telegram_enabled === true ? ($('Load Context').first().json.config.notifications.telegram_chat_ids?.[1] ?? '') : '' }}",
+        "text": "={{ $json.alert_text }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML"
+        }
+      },
+      "id": "840fafe9-5c28-437a-9704-156832457ce7",
+      "name": "Alert Admin 2",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        7264,
+        1024
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "webhookId": "72905417-e271-41f2-be0b-3d6eeaf2ff1e",
+      "credentials": {
+        "telegramApi": {
+          "id": "Bl5dMUlxAbvjD5e5",
+          "name": "tcs demo bot"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "notes": "Админ получает алерт, если включено."
     }
   ],
   "pinData": {
@@ -1927,6 +2064,11 @@
           },
           {
             "node": "Respond Muted",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Notify Muted 2",
             "type": "main",
             "index": 0
           }
@@ -2297,6 +2439,11 @@
             "node": "Manager Alert",
             "type": "main",
             "index": 0
+          },
+          {
+            "node": "Manager Alert 2",
+            "type": "main",
+            "index": 0
           }
         ]
       ]
@@ -2428,6 +2575,11 @@
             "node": "Alert Admin",
             "type": "main",
             "index": 0
+          },
+          {
+            "node": "Alert Admin 2",
+            "type": "main",
+            "index": 0
           }
         ]
       ]
@@ -2455,6 +2607,11 @@
         [
           {
             "node": "Lead Alert",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Lead Alert 2",
             "type": "main",
             "index": 0
           }
