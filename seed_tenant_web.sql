@@ -20,13 +20,13 @@ BEGIN;
 INSERT INTO tenants (tenant_id, business_name, channel, external_page_id, is_active, config)
 VALUES (
   'demo_site',
-  'Demo',
+  'Greentriangle',
   'web',
   'demo-site-key',
   true,
   $cfg$
   {
-    "business": { "name": "Demo", "description": "Описание бизнеса", "timezone": "Asia/Almaty",
+    "business": { "name": "Greentriangle", "description": "Software development, AI automation and IT consulting agency.", "timezone": "Asia/Almaty",
                   "languages": ["en", "ru"], "communication_tone": "friendly, concise, professional" },
     "agent": { "name": "Консультант", "model": "openai/gpt-4o-mini", "temperature": 0.3, "memory_window": 12 },
     "integrations": { "telegram_enabled": true, "google_sheets_enabled": false, "crm_enabled": false },
@@ -56,12 +56,13 @@ VALUES (
   1,
 $p$LANGUAGE RULE (highest priority): Reply in the same language as the customer's latest message. If the customer writes in English, reply in English. If the customer writes in Russian, reply in Russian. Never switch language on your own.
 
-You are the {{kb:agent_role}} of the company. Your job is to help the customer and collect the details needed for a request.
+You are the {{kb:agent_role}} at Greentriangle, a software development, AI automation and IT consulting agency. Help the customer and collect the details needed for a request.
 Required fields: {{required_fields}}. Optional fields: {{optional_fields}}.
-Ask at most one question at a time. Never invent prices, timelines or terms — use only the facts below.
+Ask at most one question at a time. Use only the facts below; never invent prices, discounts or timelines. All prices are in USD.
+When the customer asks about cost, quote the relevant hourly rate or fixed-price range from the catalog and offer a short discovery call for an exact quote.
 Supported languages: {{languages}} (default {{language_default}}).
 
-About services and prices:
+Services and pricing:
 {{kb:services}}$p$,
   true
 )
@@ -73,7 +74,21 @@ ON CONFLICT (tenant_id, version) DO UPDATE SET
 INSERT INTO tenant_kb (tenant_id, key, value)
 VALUES
   ('demo_site', 'agent_role', 'sales consultant'),
-  ('demo_site', 'services',   'Describe your services and prices here')
+  ('demo_site', 'services',   'HOURLY RATES (USD/hour):
+- Full-stack / web development: $55-$95
+- Backend / API / integrations: $65-$110
+- AI development (RAG, agents, voice): $85-$140
+- Automation (n8n, Make, CRM): $60-$100
+- DevOps / cloud infrastructure: $75-$125
+- UI/UX design: $50-$85
+- PM / tech lead / architect: $80-$135
+
+FIXED-PRICE PROJECTS (USD):
+- Custom AI assistant / turnkey RAG bot (CRM integration, knowledge base, analytics, deployment): $3,500-$8,500
+- Voice AI receptionist / call center (telephony, STT/TTS, scenarios, calendar/CRM booking): $4,500-$10,000
+- End-to-end business process automation (website, messengers, ERP/CRM, payments, dashboards): $4,000-$12,000
+- MVP of a web service or SaaS platform (frontend, backend, database, auth, billing): $12,000-$28,000
+- Monthly support and development retainer (20-40 hours + SLA): $1,500-$3,500/month')
 ON CONFLICT (tenant_id, key) DO UPDATE SET value = EXCLUDED.value;
 
 COMMIT;
